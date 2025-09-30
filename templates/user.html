@@ -1,0 +1,116 @@
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>User</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    h1 { margin-bottom: 4px; }
+    h2 { margin-top: 24px; }
+    .muted { color: #666; font-size: 0.9em; }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f6f6f6; }
+  </style>
+  </head>
+<body>
+  <h1>{{ user.first_name }} {{ user.last_name }}</h1>
+  <div class="muted">ID: {{ user.id }} • Email: {{ user.email }} • Tier: {{ user.tier }}</div>
+
+  <h2>Profile</h2>
+  <table>
+    <tbody>
+      <tr>
+        <th>First name</th>
+        <td>{{ user.first_name }}</td>
+      </tr>
+      <tr>
+        <th>Other names</th>
+        <td>{{ user.other_names or '-' }}</td>
+      </tr>
+      <tr>
+        <th>Last name</th>
+        <td>{{ user.last_name }}</td>
+      </tr>
+      <tr>
+        <th>Phone</th>
+        <td>{{ user.phone_number or '-' }}</td>
+      </tr>
+      <tr>
+        <th>Active</th>
+        <td>{{ 'Yes' if user.is_active else 'No' }}</td>
+      </tr>
+      <tr>
+        <th>Created</th>
+        <td>{{ user.created_at }}</td>
+      </tr>
+      <tr>
+        <th>Updated</th>
+        <td>{{ user.updated_at }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Wallets</h2>
+  {% if user.wallets and user.wallets|length > 0 %}
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Currency</th>
+        <th>Active</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for w in user.wallets %}
+      <tr>
+        <td>{{ w.id }}</td>
+        <td>{{ w.currency.value or '-' }}</td>
+        <td>{{ 'Yes' if w.active else 'No' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <div class="muted">No wallets</div>
+  {% endif %}
+
+  <h2>Portfolios</h2>
+  {% if user.portfolios and user.portfolios|length > 0 %}
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Risk</th>
+        <th>Duration</th>
+        <th>Target</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in user.portfolios %}
+      <tr>
+        <td>{{ p.id }}</td>
+        <td>{{ p.type.value or '-' }}</td>
+        <td>{{ p.description or '-' }}</td>
+        <td>{{ p.risk or '-' }}</td>
+        <td>{{ p.duration or '-' }}</td>
+        <td>
+          {% if p.target %}
+            {{ p.target.amount }} {{ p.target.currency or '' }}
+          {% else %}
+            -
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <div class="muted">No portfolios</div>
+  {% endif %}
+
+  </body>
+</html>
+
+

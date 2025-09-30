@@ -1,0 +1,23 @@
+<html>
+<body>
+    <table>
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Currency</th>
+                <th>Category</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for product in products%}
+            <tr>
+                <td><a href='/product/{{product.id}}'>{{product.title}}</a> </td>
+                <td>{{product.currency.value}}</td>
+                <td>{{product.category}}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+</body>
+</html>
