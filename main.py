@@ -58,8 +58,6 @@ app.include_router(prefix=v1,router=deposit.deposit)
 app.include_router(prefix=v1,router=advisory.advisory)
 app.include_router(prefix=v1,router=admin.admin)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
 templates = Jinja2Templates(directory="templates")  # 'templates' is your HTML folder
 
 @app.get("/products", response_class=HTMLResponse)
