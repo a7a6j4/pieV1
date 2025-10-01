@@ -41,7 +41,6 @@ matplotlib-inline==0.1.7
 mdurl==0.1.2
 msgpack==1.1.1
 multitasking==0.0.12
-mysqlclient==2.2.7
 nest-asyncio==1.6.0
 numpy==2.2.6
 numpy-financial==1.0.0
