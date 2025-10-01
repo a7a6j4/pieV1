@@ -1,7 +1,5 @@
 from __future__ import print_function
 import time
-import brevo_python
-from brevo_python.rest import ApiException
 from pprint import pprint
 import os
 from dotenv import load_dotenv
@@ -12,19 +10,6 @@ import requests
 dotenv_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=dotenv_path, override=True)
 api_key = os.getenv('BREVO_API_KEY')
-
-# Configure API key authorization: api-key
-configuration = brevo_python.Configuration()
-configuration.api_key['api-key'] = api_key
-# Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-configuration.api_key_prefix['api-key'] = 'Bearer'
-# Configure API key authorization: partner-key
-configuration = brevo_python.Configuration()
-configuration.api_key['partner-key'] = api_key
-# Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-configuration.api_key_prefix['partner-key'] = 'Bearer'
-
-# create an instance of the API class
 
 async def send_email(email: str, subject: str, otp: str):
 

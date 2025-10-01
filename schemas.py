@@ -307,11 +307,6 @@ class DepositIn(BaseModel):
    product_id: int
    amount: Decimal
    tenor: int
-   start_date: Annotated[datetime, field(le=date.today())] = datetime.now()
-   
-   @validator('start_date')
-   def validate_start_date(cls, v):
-       return validate_date_not_past(v)
 
 class DepositSale(BaseModel):
     deposit_id: int

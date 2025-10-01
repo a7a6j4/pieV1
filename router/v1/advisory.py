@@ -25,14 +25,6 @@ advisory = APIRouter(
     tags=["advisory"],
 )
 
-class Advisory:
-  def __init__(self, db: db, user: model.User):
-    self.db = db
-    self.user = user
-
-  async def getFinancialIndependence(self):
-    pass
-
 @advisory.get("/independence")
 async def getFinancialIndependence(db: db, user = Depends(auth.getActiveUser)):
   """

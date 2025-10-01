@@ -16,7 +16,6 @@ from .wallet import generateWalletTransaction, getWalletBalance
 
 transaction = APIRouter(prefix="/transaction", tags=["transaction"])
 
-
 async def recordVariableTransaction(
     product: model.Product,
     amount: float,
