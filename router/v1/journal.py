@@ -1,12 +1,9 @@
-from fastapi import APIRouter, Depends, status, HTTPException, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy import select, func, case
-from ...database import db
-from ...model import UserDeposit, Deposit, DepositRate, Journal, Entries, EntrySide
-from typing import Annotated, Union, Optional, List
-from datetime import datetime
-from ... import schemas
-
+from database import db
+import model
+import schemas
+from ..v1 import auth
 
 
 journal = APIRouter(
@@ -20,7 +17,7 @@ async def getJournal(
         db: db
 ):  
   
-  journal = db.get(UserDeposit, journal_id)
+  journal = db.get(model.UserDeposit, journal_id)
   if not journal:
     raise HTTPException(
       status_code=status.HTTP_404_NOT_FOUND,
@@ -33,7 +30,7 @@ async def prepareJournal(
   credit: list[schemas.JournalEntries],
   debit: list[schemas.JournalEntries]):
 
-  journal = Journal()
+  journal = model.Journal()
   
   # Extract Pydantic model data and sum amounts
   credit_amount = sum(entry.amount for entry in credit)
@@ -42,8 +39,8 @@ async def prepareJournal(
   if credit_amount != debit_amount:
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Credit and debit amounts do not match")
   
-  credit_entries = [Entries(amount=entry.amount, side=EntrySide.CREDIT, account_id=entry.account_id) for entry in credit]
-  debit_entries = [Entries(amount=entry.amount, side=EntrySide.DEBIT, account_id=entry.account_id) for entry in debit]
+  credit_entries = [model.Entries(amount=entry.amount, side=schemas.EntrySide.CREDIT, account_id=entry.account_id) for entry in credit]
+  debit_entries = [model.Entries(amount=entry.amount, side=schemas.EntrySide.DEBIT, account_id=entry.account_id) for entry in debit]
 
   journal.entries = credit_entries + debit_entries
 
@@ -51,8 +48,8 @@ async def prepareJournal(
 
 @journal.post("/")
 async def postJournal(
-  journal = Depends(prepareJournal),
-  db: Session = Depends(db)
+  db: db,
+  journal = Depends(prepareJournal)
 ):
   
   db.add(journal)

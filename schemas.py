@@ -1,23 +1,205 @@
-from pydantic import BaseModel, model_validator, field_validator, Field as field, validator
+from pydantic import BaseModel, model_validator, field_validator, Field as field
 from typing import Optional, List, Annotated
 from datetime import datetime, date
 from decimal import Decimal
-from . import model
 import enum
-from . import model
+class NigeriaState(enum.Enum):
+
+    KANO = "KANO"  
+    LAGOS = "LAGOS"
+    KADUNA = "KADUNA"
+    KATSINA = "KATSINA"
+    OYO = "OYO"
+    RIVERS = "RIVERS"
+    BAUCHI = "BAUCHI"
+    JIGAWA = "JIGAWA"
+    BENUE = "BENUE"
+    ANAMBRA = "ANAMBRA"
+    BORNO = "BORNO"
+    DELTA = "DELTA"
+    NIGER = "NIGER"
+    IMO = "IMO"
+    AKWA_IBOM = "AKWA_IBOM"
+    OGUN = "OGUN"
+    SOKOTO = "SOKOTO"   
+    ONDO = "ONDO"
+    OSUN = "OSUN"
+    KOGI = "KOGI"
+    ZAMFARA = "ZAMFARA"
+    ENUGU = "ENUGU"
+    KEBBI = "KEBBI"
+    EDO = "EDO"
+    PLATEAU = "PLATEAU"
+    ADAMAWA = "ADAMAWA"
+    CROSSRIVER = "CROSSRIVER"
+    ABIA = "ABIA"
+    EKITI = "EKITI"
+    KWARA = "KWARA"
+    GOMBE = "GOMBE"
+    YOBE = "YOBE"
+    TARABA = "TARABA"   
+    EBONYI = "EBONYI"
+    NASARAWA = "NASARAWA"
+    BAYELSA = "BAYELSA"
+    FCT = "FCT"
+
+
+class AssetClass(enum.Enum):
+    USEQUITY='US Equities'
+    NGEQUITY='Nigeria Equities'    
+    USBONDS='US Bonds'
+    USTREASURY='US Treasury'
+    NGBONDS='Nigeria Bonds'
+    NGTREASURY='Nigeria Treasury Bills'
+    USCPAPER='US Commercial Debt'
+    NGCPAPER='Nigeria Commercial Paper'
+    USCORP='US Corporate Bond'
+    NGCORP='Nigeria Corporate Bond'
+    GLOBALEQUITY='Global Equities'
+    NGREAL='Nigeria Real Estate'
+    USREAL='US Real Estate'
+    NGPRIVATE='Nigeria Private Debt'
+    USPRIVATE='US Private Debt'
+    USDEPOSIT='USD Deposits'
+    NGDEPOSIT='NGN Deposits'
+    NGEURO='Nigeria Eurobonds'
+    SSEUR0='Sub-Sahara Africa Eurobonds'
+    FREUR0='Frontier Market Eurobonds'
+    FIXEDINCOME='Fixed Income'
+    MONEYMARKET='Money Market'
+    OTHER='Other'
+
+class ProductClass(enum.Enum):
+    DEPOSIT = "Deposit"
+    EQUITY = "Equity"
+    ETF = "Etf"
+    FUND = 'Fund'
+    CRYPTO = "Crypto"
+    MUTUAL_FUND = "Mutual Fund"
+
+class RiskLevel(enum.Enum):
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+
+class HouseholdIncome(enum.Enum):
+    SINGLE = "single"
+    DOUBLED = "double"
+
+class IncomeSource(enum.Enum):
+    SALARY = "salary"
+    BUSINESS = "business"
+    INVESTMENT = "investment"
+    RENT = "rent"
+    OTHER = "other"
+    NONE = "none"
+
+class Currency(enum.Enum):
+    NGN = "NGN"
+    USD = "USD"
+
+class EntrySide(enum.Enum):
+    DEBIT = "debit"
+    CREDIT = "credit"
+
+class TransactionType(enum.Enum):
+    DEPOSIT = "deposit"
+    WITHDRAWAL = "withdrawal"
+    INVESTMENT = "investment"
+    DIVIDEND = "dividend"
+    INTEREST = "interest"
+    LIQUIDATION = "liquidation"
+    FEE = "fee"
+    TAX = "tax"
+    TRANSFER = "transfer"
+    BUY = "buy"
+    SELL = "sell"
+
+class PortfolioType(enum.Enum):
+    TARGET = "target"
+    GROWTH = "growth"
+    EMERGENCY = "emergency"
+    LIQUID = "liquid"
+    INCOME = "income"
+    INVEST = "invest"
+
+class Frequency(enum.Enum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    ANNUALLY = "annually"
+
+class VariableType(enum.Enum):
+    STOCK = "stock"
+    BOND = "bond"
+    MUTUAL_FUND = "mutual_fund"
+    MONEY_MARKET = "money_market"
+    ETF = "etf"
+    COMMODITY = "commodity"
+    REAL_ESTATE = "real_estate"
+    CRYPTOCURRENCY = "cryptocurrency"
+    OTHER = "other"
+
+class InterestPay(enum.Enum):
+    MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    HALFYEARLY = "half-yearly"
+    ANNUALLY = "annually"
+    ATMATURITY = "at-maturity"
+
+class TrasnsactionStatus(enum.Enum):
+    PENDING = "pending"
+    REVERSED = "reversed"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class AccountType(enum.Enum):
+    ASSET = "asset"
+    LIABILITY = "liability"
+    EQUITY = "equity"
+    REVENUE = "revenue"
+    EXPENSE = "expense"
+    INCOME = "income"
+
+class WealthObjectiveBase(enum.Enum):
+    INDEPENDENCE = "independence"
+    RETIREMENT = "retirement"
+    EDUCATION = "education"
+    OTHER = "other"
+    GROWTH = "growth"
+    INCOME = "income"
+
+class AdminGroup(enum.Enum):
+    EXECUTIVE = "executive"
+    OPERATIONS = "operations"
+    SUPPORT = "support"
+    SUPER = "superAdmin"
+    ADMIN = "admin"
+
+class AdminRole(enum.Enum):
+    READ = "read"
+    WRITE = "write"
+    DELETE = "delete"
+    APPROVE = "approve"
+    SUPER = "superAdmin"
+
+class CashFlowType(enum.Enum):
+    INFLOW = "inflow"
+    OUTFLOW = "outflow"
 
 
 inflow_types = [
-    model.TransactionType.DEPOSIT,
-    model.TransactionType.SELL,
-    model.TransactionType.INTEREST,
-    model.TransactionType.LIQUIDATION,
+   TransactionType.DEPOSIT,
+   TransactionType.SELL,
+   TransactionType.INTEREST,
+   TransactionType.LIQUIDATION,
 ]
 outflow_types = [
-    model.TransactionType.WITHDRAWAL,
-    model.TransactionType.BUY,
-    model.TransactionType.FEE,
-    model.TransactionType.TAX,
+   TransactionType.WITHDRAWAL,
+   TransactionType.BUY,
+   TransactionType.FEE,
+   TransactionType.TAX,
 ]
 
 # Add this validator function at the top of the file
@@ -42,7 +224,7 @@ class IssuerSchema(IssuerBase):
 
 class VariableBase(BaseModel):
     symbol: str
-    type: model.VariableType
+    type: VariableType
 
 class DepositBase(BaseModel):
     min_tenor: int
@@ -64,7 +246,7 @@ class ProductBase(BaseModel):
     risk_level: int
     horizon: int
     img: Optional[str] = None
-    currency: model.Currency
+    currency: Currency
     is_active: bool = True
 
 class ProductCreate(ProductBase):
@@ -133,17 +315,17 @@ class UserSchema(UserBase):
 
 class RiskProfileBase(BaseModel):
     is_single: bool
-    household_income: model.HouseholdIncome = model.HouseholdIncome.SINGLE
+    household_income: HouseholdIncome = HouseholdIncome.SINGLE
     primary_provider: bool = False
     monthly_income: Decimal
-    primary_income_currency: model.Currency
-    primary_income_source: model.IncomeSource
+    primary_income_currency: Currency
+    primary_income_source: IncomeSource
     annual_rent: Decimal
     dependents: int = 0
     children: int = 0
     wealth_value: Decimal
-    secondary_income_source: Optional[model.IncomeSource] = None
-    objective: model.WealthObjectiveBase
+    secondary_income_source: Optional[IncomeSource] = None
+    objective: WealthObjectiveBase
 
 class RiskProfileUpdate(RiskProfileBase):
     pass
@@ -161,7 +343,7 @@ class RiskProfileSchema(RiskProfileBase):
         from_attributes = True
 
 class PortfolioBase(BaseModel):
-    type: model.PortfolioType
+    type: PortfolioType
     active: bool = True
     closed: bool = False
     risk: Optional[int] = None
@@ -182,7 +364,7 @@ class PortfolioSchema(PortfolioBase):
 class TargetBase(BaseModel):
     amount: Decimal
     date: Annotated[Optional[datetime], field(gt=date.today())]
-    currency: model.Currency
+    currency: Currency
 
 class TargetCreate(TargetBase):
     pass
@@ -208,7 +390,7 @@ class CommitmentBase(BaseModel):
     duration: int = 0
     active: bool = False
     
-    @validator('start_date')
+    @field_validator('start_date')
     def validate_start_date(cls, v):
         return validate_date_not_past(v)
 
@@ -234,21 +416,21 @@ class PortfolioAttributesCreate(BaseModel):
     targetAllocation: Optional[float] = None
 
 class PortfolioAttributesUpdate(PortfolioAttributesCreate):
-    type: Optional[model.PortfolioType] = None
+    type: Optional[PortfolioType] = None
     description: Optional[str] = None
     risk: Optional[int] = None
 
 class AccountBase(BaseModel):
-    account_type: model.AccountType
+    account_type: AccountType
     code: int
     name: str
-    currency: model.Currency
+    currency: Currency
     description: Optional[str] = None
     as_of: Optional[Annotated[datetime, field(le=date.today())]] = None
     is_header: bool = False
     parent_id: Optional[int] = None
     
-    @validator('as_of')
+    @field_validator('as_of')
     def validate_as_of(cls, v):
         return validate_date_not_past(v)
 
@@ -264,7 +446,7 @@ class AccountSchema(AccountBase):
 
 class WalletTransactionBase(BaseModel):
     amount: Decimal
-    type: model.TransactionType
+    type: TransactionType
 
 class WalletTransactionCreate(WalletTransactionBase):
     pass
@@ -284,14 +466,14 @@ class WalletTransactionSchema(WalletTransactionBase):
 
 class WalleTransactionOut(WalletTransactionSchema):
     amount: int
-    transaction_type: model.TransactionType
-    status: model.TrasnsactionStatus
+    transaction_type: TransactionType
+    status: TrasnsactionStatus
     transaction_date: datetime
-    side: model.EntrySide
+    side: EntrySide
 
 class AccountSchema(BaseModel):
     id: int
-    account_type: model.AccountType
+    account_type: AccountType
 
 
 
@@ -321,7 +503,7 @@ class EntrySchema(BaseModel):
     account_id: int
     journal_id: int
     amount: Decimal
-    side: model.EntrySide
+    side: EntrySide
     description: Optional[str] = None
 
     class Config:
@@ -335,7 +517,7 @@ class JournalSchema(BaseModel):
     account_id: int
     journal_id: int
     amount: Decimal
-    side: model.EntrySide
+    side: EntrySide
     description: Optional[str] = None
 
     class Config:
@@ -345,7 +527,7 @@ class JournalSchema(BaseModel):
 class AccountBalanceSchema(BaseModel):
     account_id: int
     balance: Decimal
-    currency: model.Currency
+    currency: Currency
     as_of: datetime
 
     class Config:
@@ -371,7 +553,6 @@ class BenchmarkCreate(BaseModel):
     name: str
     description: Optional[str] = None
     currency: str
-    source: model.DataSource
 
 class BenchmarkMeta(BaseModel):
     date: datetime
@@ -388,12 +569,12 @@ class BenchmarkMeta(BaseModel):
 
 class SavingsRecommendationCreate(BaseModel):
     tenor: Optional[int] = None
-    currency: model.Currency = model.Currency.NGN
+    currency: Currency = Currency.NGN
     amount: Optional[float] = None
 
 class IncomeAdvisoryCreate(BaseModel):
-    frequency: model.Frequency
-    currency: model.Currency = model.Currency.NGN
+    frequency: Frequency
+    currency: Currency = Currency.NGN
     income: Optional[float] = None
     investment: Optional[float] = None
     duration: Optional[int] = None
@@ -403,7 +584,7 @@ class growthParams(BaseModel):
     targetAmount: Annotated[Optional[float], field(gt=0)] = None
     investment: Annotated[Optional[float], field(gt=0)] = None
     targetDate: Annotated[Optional[datetime], field(gt=date.today())] = None
-    currency: model.Currency = model.Currency.NGN
+    currency: Currency = Currency.NGN
     duration: Optional[int] = None
     target: bool
 
@@ -434,14 +615,14 @@ class growthParams(BaseModel):
 
 class GrowthRecommendationCreate(BaseModel):
     amount: Optional[float] = None
-    currency: model.Currency = model.Currency.NGN
+    currency: Currency = Currency.NGN
     duration: int
 
 class SignupCreate(BaseModel):
     first_name: str
     last_name: str
     other_name: Optional[str] = None
-    telephone: Optional[str] = None
+    telephone: str
     email: str
 
     class Config:
@@ -470,6 +651,7 @@ class TokenResponse(BaseModel):
             }
         }
 
+
 class AccessLimit(enum.Enum):
     PASSWORD = "createPassword"
     LOGIN = "login"
@@ -480,7 +662,6 @@ class AccessLimit(enum.Enum):
     APPROVE_ADMIN = "approveAdmin"
     CREATE_ADMIN = "createAdmin"
 
-
 class SigninTokenResponse(TokenResponse):
     limit: AccessLimit
     refresh: Optional[str] = None
@@ -490,5 +671,185 @@ class AdminUserCreate(BaseModel):
     last_name: str
     phone_number: Optional[str] = None
     email: str
-    group: model.AdminGroup
-    role: model.AdminRole
+    group: AdminGroup
+    role: AdminRole
+
+opr = {
+    "signUp" : {
+        "seconds": 300,
+        "name": "Signup",
+        "subject": "Your Signup OTP"
+    },
+    "createPassword" : {
+        "seconds": 90,
+        "name": "Create Password",
+        "subject": "Create Password OTP"
+    },
+    "resetPassword" : {
+        "seconds": 180,
+        "name": "Reset Password",
+        "subject": "Reset Password OTP"
+    },
+    "login" : {
+        "seconds": 3600,
+        "name": "Access Token",
+        "subject": "Your Pie Access Token"
+    }
+}
+
+
+class AnchorAccountCreate(BaseModel):
+    first_name: str
+    last_name: str
+    maiden_name: Optional[str] = None
+    address_line_1: str
+    address_line_2: Optional[str] = None
+    city: str
+    state: NigeriaState
+    postal_code: str
+    email: str
+    phone_number: str
+    doing_business_as: Optional[str] = None
+    is_sole_proprietor: bool = False
+
+# payload = { "data": { "attributes": {
+#             "fullName": {
+#                 "firstName": "John",
+#                 "lastName": "Asuquo",
+#                 "maidenName": "John Asuquo"
+#             },
+#             "address": {
+#                 "country": "NG",
+#                 "state": "LAGOS",
+#                 "addressLine_1": "52 Unity Road, By Co-Op Villas, Badore, Ajah",
+#                 "city": "Lagos",
+#                 "postalCode": "105101"
+#             },
+#             "email": "ani@cleva.ng",
+#             "phoneNumber": "08082835454",
+#             "doingBusinessAs": "Cleva Platforms Nigeria Ltd",
+#             "isSoleProprietor": False
+#         } } }
+# headers = {
+#     "accept": "application/json",
+#     "content-type": "application/json",
+#     "x-anchor-key": "hfVz5.1f836e3cf846c4fb0695e31cf2a4f2eff8869c878f950a65385658c5aca2e0834f064e545e355d852b734b0b6918e88dd0d2"
+# }
+
+
+class Address(BaseModel):
+    addressLine_1: str
+    addressLine_2: Optional[str] = None
+    city: str
+    postalCode: str
+    state: NigeriaState
+
+class Gender(enum.Enum):
+    MALE = "Male"
+    FEMALE = "Female"
+
+class AnchorKycLevel2(BaseModel):
+    dateOfBirth: datetime
+    gender: Gender = field(description="Gender must be either Male or Female")
+    bvn: str = field(max_length=11, min_length=11, description="BVN must be 11 digits")
+    selfieImage: str
+
+class IDType(enum.Enum):
+    DRIVERS_LICENSE = "DRIVERS_LICENSE"
+    VOTERS_CARD = "VOTERS_CARD"
+    PASSPORT = "PASSPORT"
+    NATIONAL_ID = "NATIONAL_ID"
+    NIN_SLIP = "NIN_SLIP"
+
+class AnchorKycLevel3(BaseModel):
+    idType: IDType
+    idNumber: str
+    idExpirationDate: datetime
+
+class OtpType(enum.Enum):
+    SIGNUP = "signUp"
+    CREATE_PASSWORD = "createPassword"
+    RESET_PASSWORD = "resetPassword"
+
+class AddressProofType(enum.Enum):
+    BANK_STATEMENT = "BANK_STATEMENT"
+    UTILITY_BILL = "UTILITY_BILL"
+    ADDRESS_PROOF = "ADDRESS_PROOF"
+
+class KycCreate(BaseModel):
+    maidenName: Optional[str] = None
+    address: Address
+    dateOfBirth: datetime
+    gender: Gender = field(description="Gender must be either Male or Female")
+    bvn: str = field(max_length=11, min_length=11, description="BVN must be 11 digits")
+    idType: IDType
+    idNumber: str
+    idExpirationDate: datetime
+    addressProofType: AddressProofType
+    phoneNumber: str
+
+class AnchorKycCreate(KycCreate):
+    firstName: str
+    lastName: str
+    middleName: Optional[str] = None
+    email: str
+    phoneNumber: str
+    
+class KycUpdate(BaseModel):
+    maidenName: Optional[str] = None
+    addressLine_1: Optional[str] = None
+    addressLine_2: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[NigeriaState] = None
+    postalCode: Optional[str] = None
+    dateOfBirth: Optional[datetime] = None
+    gender: Optional[str] = None
+    bvn: Optional[str] = None
+    selfieImage: Optional[str] = None
+    idType: Optional[IDType] = None
+    idNumber: Optional[str] = None
+    idFrontImage: Optional[str] = None
+    idBackImage: Optional[str] = None
+    idExpirationDate: Optional[datetime] = None
+
+
+class AnchorAccountCreate(BaseModel):
+    firstName: str
+    lastName: str
+    maidenName: Optional[str] = None
+    addressLine_1: str
+    addressLine_2: Optional[str] = None
+    city: str
+    state: NigeriaState
+    postalCode: str
+    email: str
+    phoneNumber: str
+    dateOfBirth: datetime
+    gender: str
+    bvn: str
+    selfieImage: str
+    idType: IDType
+    idNumber: str
+    idFrontImage: str
+    idBackImage: str
+    idExpirationDate: datetime
+
+class UserDocumentType(enum.Enum):
+    PASSPORT = "PASSPORT"
+    FRONT_ID = "FRONT_ID"
+    BACK_ID = "BACK_ID"
+    SELFIE = "SELFIE"
+    PROOF_OF_ADDRESS = "PROOF_OF_ADDRESS"
+
+class TargetCreate(BaseModel):
+    amount: float
+    date: Optional[datetime] = None
+
+class CommitmentCreate(BaseModel):
+    amount: float
+    frequency: Optional[str] = None
+    duration: Optional[int] = None
+
+class TargetCommit(BaseModel):
+  target: Optional[TargetCreate]
+  commitment: Optional[CommitmentCreate]

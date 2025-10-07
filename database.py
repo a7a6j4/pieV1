@@ -5,32 +5,25 @@ from sqlalchemy import URL, create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from typing import Annotated, Optional, Union
 from fastapi import Depends
-from .model import Base
+from model import Base
+from config import settings
 
-
-# Ensure proper .env file path and load it
-dotenv_path = Path(__file__).parent / '.env'
-if dotenv_path.exists():
-    load_dotenv(dotenv_path=dotenv_path, override=True)
-else:
-    # Try loading from current directory
-    load_dotenv(override=True)
 
 # Get environment variables with fallbacks
-host = os.getenv('HOST', 'localhost')
-port = int(os.getenv('PORT', '5432'))
-username = os.getenv('USERNAME', 'postgres')
-password = os.getenv('PASSWORD', '')
-database = os.getenv('DATABASE', 'pie_app')
-sslmode = os.getenv('SSLMODE', 'prefer')
+host = settings.HOST
+port = settings.PORT
+username = settings.USERNAME
+password = settings.PASSWORD
+database = settings.DATABASE
+sslmode = settings.SSLMODE
 
 db_url = URL.create(
     drivername="postgresql+psycopg2",
-    username=username,
-    password=password,
-    host=host,
-    port=port,
-    database=database,
+    username=settings.USERNAME,
+    password=settings.PASSWORD,
+    host=settings.HOST,
+    port=settings.PORT,
+    database=settings.DATABASE,
 )
 
 # connect_args = {"check_same_thread": False}
@@ -48,3 +41,5 @@ async def create_db_and_tables():
         print(f"Error creating database and tables: {e}")
 
 db = Annotated[Session, Depends(get_session)]
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

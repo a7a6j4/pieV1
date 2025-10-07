@@ -1,19 +1,13 @@
 import requests
 from alpaca.broker import BrokerClient
+from config import settings
 
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-Broker_API_KEY = os.getenv("BROKER_API_KEY")
-BROKER_SECRET_KEY = os.getenv("BROKER_SECRET_KEY")
-
-BROKER_API_KEY = "api-key"
-BROKER_SECRET_KEY = "secret-key"
+Broker_API_Key = settings.BROKER_API_KEY
+Broker_Secret_Key = settings.BROKER_SECRET_KEY
 
 broker_client = BrokerClient(
-                    api_key=Broker_API_KEY,
-                    secret_key=BROKER_SECRET_KEY,
+                    api_key=Broker_API_Key,
+                    secret_key=Broker_Secret_Key,
                     sandbox=True,
-                )
+                )   

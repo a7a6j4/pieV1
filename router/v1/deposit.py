@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, status, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, case
-from ...database import db
-from ...model import UserDeposit, Deposit, DepositRate, Product
+from database import db
+from model import UserDeposit, Deposit, DepositRate, Product
 from typing import Annotated, Union, Optional, List
 from datetime import datetime
+from ..v1 import auth
 
 
 

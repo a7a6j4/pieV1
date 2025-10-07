@@ -4,21 +4,21 @@ from fastapi.security import SecurityScopes
 from sqlalchemy import select, update, delete, func, and_, or_, not_, desc, asc, extract, case
 from sqlalchemy.orm import Session, selectinload
 from datetime import datetime, timedelta
-from ...database import db
-from ... import model
-from ... import schemas
-from . import auth
-from .portfolio import getPortfolioValue, getPortfolio, getPortfolioAssets
+from database import db
+import model
+import schemas
+from ..v1 import auth
+from ..v1.portfolio import getPortfolioValue, getPortfolio, getPortfolioAssets
 from typing import Annotated, Optional, Union
-from ...utils.assesment import runAssesment
-from .transaction import getWalletBalance
-from .user import getUser
+from utils.assesment import runAssesment
+from ..v1.transaction import getWalletBalance
+from ..v1.user import getUser
 import enum
 from fastapi import Query
 from decimal import Decimal
 from dateutil.relativedelta import relativedelta
 import numpy_financial as npf
-from .user import getUser
+from ..v1.user import getUser
 
 advisory = APIRouter(
     prefix="/advisory",
@@ -361,14 +361,14 @@ class UserRiskFactor(enum.Enum):
 
 AGELIMIT = 60
 
-async def getBestProducts(db:db, durationDays: int, currency: model.Currency):
+async def getBestProducts(db:db, durationDays: int, currency: schemas.Currency):
   # best performing index or fund product
   ngnEquityProduct = select(model.Variable).where(model.  Variable.symbol == "NGN20")
   usdEquityProduct = select(model.Variable).where(model.  Variable.symbol == "SPY")
 
 # Highest return money market or deposit product
-  usdBondProduct = select(model.Deposit).where(model.Deposit.currency == "USD")
-  ngnBondProduct = select(model.Deposit).where(model.Deposit.currency == "NGN")
+  usdBondProduct = select(model.Deposit).where(model.Deposit.currency == schemas.Currency.USD)
+  ngnBondProduct = select(model.Deposit).where(model.Deposit.currency == schemas.Currency.NGN)
 
   lowRiskProducts = select(model.Variable.id).where(model.Variable.horizon <= 1)
   depositProducts = select(model.Deposit.id).where(model.Deposit.max_tenor >= durationDays, model.Deposit.min_tenor <= durationDays)
@@ -378,9 +378,9 @@ async def getBestProducts(db:db, durationDays: int, currency: model.Currency):
 
   recommendedLowRiskProducts = sorted(lowRiskProducts + depositProducts, key=lambda x: x.latestValue, reverse=True)
 
-  if currency == model.Currency.USD:
+  if currency == schemas.Currency.USD:
     return usdEquityProduct, usdBondProduct, recommendedLowRiskProducts[0]
-  elif currency == model.Currency.NGN:
+  elif currency == schemas.Currency.NGN:
     return ngnEquityProduct, ngnBondProduct
 
 def getAllocation(duration: int, riskFactor: UserRiskFactor, age: int):
@@ -398,9 +398,9 @@ def getWeightedReturn(allocation: dict, currency: str, bond_return: float) -> fl
     currency: 'USD' or 'NGN'
     """
     # Set equity return based on currency
-    if currency == 'USD':
+    if currency == schemas.Currency.USD:
         equity_return = 0.08
-    elif currency == 'NGN':
+    elif currency == schemas.Currency.NGN:
         equity_return = 0.25
     else:
         raise ValueError("Unsupported currency")
@@ -430,8 +430,8 @@ async def getTargetRecommendation(db: db,
   time_diff = relativedelta(future_date, datetime.now())
   days_diff = (future_date - datetime.now()).days
 
-  lowRiskProducts = select(model.Variable.id).where(model.Variable.horizon <= 1, model.Variable.currency == attributes.currency)
-  depositProducts = select(model.Deposit.id).where(model.Deposit.max_tenor >= min(365,days_diff), model.Deposit.min_tenor <= min(365,days_diff), model.Deposit.currency == attributes.currency)
+  lowRiskProducts = select(model.Variable.id).where(model.Variable.horizon <= 1, model.Variable.currency == attributes.currency.value)
+  depositProducts = select(model.Deposit.id).where(model.Deposit.max_tenor >= min(365,days_diff), model.Deposit.min_tenor <= min(365,days_diff), model.Deposit.currency == attributes.currency.value)
 
   lowRiskProducts = await getHigestReturnVariable(db, lowRiskProducts)
   depositProducts = await getHigestReturnDeposit(db, depositProducts)
@@ -441,7 +441,7 @@ async def getTargetRecommendation(db: db,
   equityProductUSD = select(model.Variable).where(model.Variable.symbol == "SPY")
   equityProductNGN = select(model.Variable).where(model.Variable.id == 2779)
 
-  equityProduct = db.execute(equityProductUSD if attributes.currency.value == "USD" else equityProductNGN).scalar_one_or_none()
+  equityProduct = db.execute(equityProductUSD if attributes.currency.value == schemas.Currency.USD.value else equityProductNGN).scalar_one_or_none()
 
   if not equityProduct:
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Equity product not found")

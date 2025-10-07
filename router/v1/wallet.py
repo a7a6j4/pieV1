@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Security
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from ...database import db
-from ... import model
-from ... import schemas
-from . import auth
+from database import db
+import model
+import schemas
+from ..v1 import auth
 from typing import Annotated, Optional
 from sqlalchemy import select, func, case
 from datetime import datetime
-from .journal import prepareJournal
+from ..v1.journal import prepareJournal
 
 wallet = APIRouter(
     prefix="/wallet",
@@ -19,7 +19,7 @@ wallet = APIRouter(
 async def getWallet(
   db: db,
   wallet_id: Optional[int] = Query(default=None, description="Wallet_ID is required for admin to get wallet data"),
-  currency: Optional[model.Currency] = Query(default=None, description="Currency is required for admin to get wallet data"),
+  currency: Optional[schemas.Currency] = Query(default=None, description="Currency is required for admin to get wallet data"),
   payload = Security(auth.readUser, scopes=["readUser"])):
 
   if payload.get("token") == "user":
@@ -70,13 +70,13 @@ async def getWalletBalance(
 async def getWalletTransactions(
   db: db,
   wallet: Annotated[model.Wallet, Depends(getWallet)],
-  status: Annotated[Optional[model.TrasnsactionStatus], Query()] = None
+  status: Annotated[Optional[schemas.TrasnsactionStatus], Query()] = None
 ):
 
   base_query = select(model.WalletTransaction).where(model.WalletTransaction.wallet_id == wallet.id).order_by(model.WalletTransaction.date.desc())  
   transactions = db.execute(base_query).scalars().all()
   if status:
-    base_query = base_query.where(model.WalletTransaction.status == status)
+    base_query = base_query.where(model.WalletTransaction.status == schemas.TrasnsactionStatus(status))
   transactions = db.execute(base_query).scalars().all()
   return transactions
 
@@ -88,7 +88,7 @@ async def generateWalletTransaction(
     if wallet.active == False:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Wallet is not active")
     
-    if data.type in [model.TransactionType.BUY, model.TransactionType.INVESTMENT, model.  TransactionType.WITHDRAWAL]:
+    if data.type in [schemas.TransactionType.BUY, schemas.TransactionType.INVESTMENT, schemas.TransactionType.WITHDRAWAL]:
         # check if wallet has sufficient balance
         balance = await getWalletBalance(wallet=wallet, db=db)
         # balance = await checkWalletBalance(wallet_id=wallet.id, db=db)

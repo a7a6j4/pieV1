@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Body, Depends, Security, HTTPException, status
 from fastapi.security import SecurityScopes
-from ...database import db
+from database import db
 from sqlalchemy import select, insert, update
 from sqlalchemy.orm import Session
 from typing import Annotated, Optional, Union, List
-from ... import model
-from ... import schemas
+import model
+import schemas
 from . import auth
 
 admin = APIRouter(prefix="/admin", tags=["admin"])

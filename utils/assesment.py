@@ -1,7 +1,6 @@
-from ..schemas import RiskProfileSchema
-from ..model import HouseholdIncome, IncomeSource, Currency, RiskLevel
+import schemas
 
-async def runAssesment(data: RiskProfileSchema):
+async def runAssesment(data: schemas.RiskProfileSchema):
 
   total_score = 0
 
@@ -13,9 +12,9 @@ async def runAssesment(data: RiskProfileSchema):
         total_score += 2
     
     if key == "household_income":
-      if value == HouseholdIncome.SINGLE:
+      if value == schemas.HouseholdIncome.SINGLE:
         total_score += 1
-      elif value == HouseholdIncome.DOUBLE:
+      elif value == schemas.HouseholdIncome.DOUBLE:
         total_score += 3
     
     if key == "primary_provider":
@@ -63,13 +62,13 @@ async def runAssesment(data: RiskProfileSchema):
         total_score += 1
     
     if key == "primary_income_source":
-      if value == IncomeSource.SALARY:
+      if value == schemas.IncomeSource.SALARY:
         total_score += 2
-      elif value == IncomeSource.BUSINESS:
+      elif value == schemas.IncomeSource.BUSINESS:
         total_score += 1
-      elif value == IncomeSource.INVESTMENT:
+      elif value == schemas.IncomeSource.INVESTMENT:
         total_score += 3
-      elif value == IncomeSource.OTHER:
+      elif value == schemas.IncomeSource.OTHER:
         total_score += 2
 
     if key == "children":
@@ -109,9 +108,9 @@ async def runAssesment(data: RiskProfileSchema):
         total_score += 7
 
   if total_score <= 15:
-    return RiskLevel.LOW
+    return schemas.RiskLevel.LOW
   elif total_score <= 25:
-    return RiskLevel.MODERATE
+    return schemas.RiskLevel.MODERATE
   else:
-    return RiskLevel.HIGH
+    return schemas.RiskLevel.HIGH
 

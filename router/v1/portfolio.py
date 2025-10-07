@@ -1,39 +1,24 @@
 from fastapi import FastAPI, APIRouter, Security, Depends, HTTPException, status, Query, Path, Body
 from fastapi.security import SecurityScopes
-from ...database import db
+from database import db
 from sqlalchemy import select, update, delete, func, and_, or_, not_, desc, asc, extract, case
 from sqlalchemy.sql import over
 from sqlalchemy.orm import Session, selectinload
 from pydantic import BaseModel
 from typing import Optional, List, Union, Annotated
 from datetime import datetime
-from ...model import PortfolioTransaction, Portfolio, User, RiskProfile, Journal, TransactionType, Entries, Target, PortfolioType, Product, ContributionPlan, ContributionSchedule, VariableHolding, UserDeposit, VariableValue, DepositRate, Variable, Deposit, Currency
-from ...utils.payment_schedule import generate_schedule_dates
-from .user import getUser
-from ... import schemas
+import model
+from utils.payment_schedule import generate_schedule_dates
+from ..v1.user import getUser
+import schemas
 from decimal import Decimal
 import enum
-from ... import model
-from . import auth
+from ..v1 import auth
 
 portfolio = APIRouter(
     prefix="/portfolio",
     tags=["portfolio"]
 )
-
-class TargetCreate(BaseModel):
-    amount: float
-    date: Union[datetime, None] = None
-
-class CommitmentCreate(BaseModel):
-    amount: float
-    frequency: str
-    duration: Optional[int] = None
-
-class TargetCommit(BaseModel):
-  target: Optional[TargetCreate]
-  commitment: Optional[CommitmentCreate]
-
 
 @portfolio.get("/")
 async def getPortfolio(
@@ -59,13 +44,13 @@ async def createPortfolio(
 ):
 
     description = {
-     PortfolioType.EMERGENCY.value: "Six months monthly income savings, held in short term, low risk & high yield investments",
-     PortfolioType.LIQUID.value: "Holds cash to be needed in less than 90 days in highly liquid, low risk investments",
-     PortfolioType.INVEST.value: "Investment Portfolio"}
+     schemas.PortfolioType.EMERGENCY.value: "Six months monthly income savings, held in short term, low risk & high yield investments",
+     schemas.PortfolioType.LIQUID.value: "Holds cash to be needed in less than 90 days in highly liquid, low risk investments",
+     schemas.PortfolioType.INVEST.value: "Investment Portfolio"}
 
     portfolio = model.Portfolio(
         user_id=user.id, 
-        type=PortfolioType.INVEST.name)
+        type=schemas.PortfolioType.INVEST.name)
     
     if attributes.description is not None:
         portfolio.description = attributes.description
@@ -77,7 +62,7 @@ async def createPortfolio(
         target = model.Target(**attributes.target.model_dump())
         portfolio.target = target
     else:
-        portfolio.description = description[PortfolioType.INVEST.value]
+        portfolio.description = description[schemas.PortfolioType.INVEST.value]
 
     db.add(portfolio)
     db.commit()
@@ -169,9 +154,9 @@ async def getPortfolioVariableAssets(
         (func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.INVESTMENT,
-                    TransactionType.INTEREST,
-                    TransactionType.BUY
+                    schemas.TransactionType.INVESTMENT,
+                    schemas.TransactionType.INTEREST,
+                    schemas.TransactionType.BUY
                 ]), model.VariableHolding.units),
                 else_=0
             )
@@ -179,9 +164,9 @@ async def getPortfolioVariableAssets(
         func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.LIQUIDATION, 
-                    TransactionType.SELL, 
-                    TransactionType.WITHDRAWAL]), 
+                    schemas.TransactionType.LIQUIDATION, 
+                    schemas.TransactionType.SELL, 
+                    schemas.TransactionType.WITHDRAWAL]), 
                     model.VariableHolding.units),
                 else_=0
             )
@@ -190,9 +175,9 @@ async def getPortfolioVariableAssets(
         (func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.INVESTMENT,
-                    TransactionType.INTEREST,
-                    TransactionType.BUY
+                    schemas.TransactionType.INVESTMENT,
+                    schemas.TransactionType.INTEREST,
+                    schemas.TransactionType.BUY
                 ]), model.VariableHolding.units),
                 else_=0
             )
@@ -200,9 +185,9 @@ async def getPortfolioVariableAssets(
         func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.LIQUIDATION, 
-                    TransactionType.SELL, 
-                    TransactionType.WITHDRAWAL]), 
+                    schemas.TransactionType.LIQUIDATION, 
+                    schemas.TransactionType.SELL, 
+                    schemas.TransactionType.WITHDRAWAL]), 
                     model.VariableHolding.units),
                 else_=0
             )
@@ -210,36 +195,36 @@ async def getPortfolioVariableAssets(
         ((func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.INVESTMENT,
-                    TransactionType.INTEREST,
-                    TransactionType.BUY
+                    schemas.TransactionType.INVESTMENT,
+                    schemas.TransactionType.INTEREST,
+                    schemas.TransactionType.BUY
                 ]), model.PortfolioTransaction.amount),
                 else_=0
             )
         ) - func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.LIQUIDATION, 
-                    TransactionType.SELL, 
-                    TransactionType.WITHDRAWAL]), 
+                    schemas.TransactionType.LIQUIDATION, 
+                    schemas.TransactionType.SELL, 
+                    schemas.TransactionType.WITHDRAWAL]), 
                     model.PortfolioTransaction.amount),
                 else_=0
             )
         )) / (func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.INVESTMENT,
-                    TransactionType.INTEREST,
-                    TransactionType.BUY
+                    schemas.TransactionType.INVESTMENT,
+                    schemas.TransactionType.INTEREST,
+                    schemas.TransactionType.BUY
                 ]), model.VariableHolding.units),
                 else_=0
             )
         ) - func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.LIQUIDATION, 
-                    TransactionType.SELL, 
-                    TransactionType.WITHDRAWAL]), 
+                    schemas.TransactionType.LIQUIDATION, 
+                    schemas.TransactionType.SELL, 
+                    schemas.TransactionType.WITHDRAWAL]), 
                     model.VariableHolding.units),
                 else_=0
             )
@@ -249,36 +234,36 @@ async def getPortfolioVariableAssets(
             (func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.INVESTMENT,
-                    TransactionType.INTEREST,
-                    TransactionType.BUY
+                    schemas.TransactionType.INVESTMENT,
+                    schemas.TransactionType.INTEREST,
+                    schemas.TransactionType.BUY
                 ]), model.PortfolioTransaction.amount),
                 else_=0
             )
         ) - func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.LIQUIDATION, 
-                    TransactionType.SELL, 
-                    TransactionType.WITHDRAWAL]), 
+                    schemas.TransactionType.LIQUIDATION, 
+                    schemas.TransactionType.SELL, 
+                    schemas.TransactionType.WITHDRAWAL]), 
                     model.PortfolioTransaction.amount),
                 else_=0
             )
         )) / (func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.INVESTMENT,
-                    TransactionType.INTEREST,
-                    TransactionType.BUY
+                    schemas.TransactionType.INVESTMENT,
+                    schemas.TransactionType.INTEREST,
+                    schemas.TransactionType.BUY
                 ]), model.VariableHolding.units),
                 else_=0
             )
         ) - func.sum(
             case(
                 (model.PortfolioTransaction.type.in_([
-                    TransactionType.LIQUIDATION, 
-                    TransactionType.SELL, 
-                    TransactionType.WITHDRAWAL]), 
+                    schemas.TransactionType.LIQUIDATION, 
+                    schemas.TransactionType.SELL, 
+                    schemas.TransactionType.WITHDRAWAL]), 
                     model.VariableHolding.units),
                 else_=0
             )
@@ -311,7 +296,8 @@ async def getPortfolioDeposits(
             model.UserDeposit.start_date,
             model.UserDeposit.rate,
             model.UserDeposit.maturity_date,
-            model.Product
+            model.Product,
+            model.Currency
         )
         .join(model.PortfolioTransaction, model.UserDeposit.transaction_id == model.PortfolioTransaction.id)
         .join(model.Product, model.PortfolioTransaction.product_id == model.Product.id)
@@ -345,12 +331,12 @@ async def getPortfolioAssets(
 @portfolio.get("/value")
 async def getPortfolioValue(
     products = Depends(getPortfolioAssets),
-    currency: model.Currency = Query(default=None)):
+    currency: schemas.Currency = Query(default=None)):
 
     # print(products)
 
-    usd_value = sum(x["value"] for x in filter(lambda x: x["Product"].currency == model.Currency.USD, products))
-    ngn_value = sum(x["value"] for x in filter(lambda x: x["Product"].currency == model.Currency.NGN, products))
+    usd_value = sum(x["value"] for x in filter(lambda x: x["Product"].currency == schemas.Currency.USD, products))
+    ngn_value = sum(x["value"] for x in filter(lambda x: x["Product"].currency == schemas.Currency.NGN, products))
 
     total_usd = float(usd_value) + (float(ngn_value) / 1600)
     total_ngn = float(ngn_value) + (float(total_usd) * 1600)
@@ -363,9 +349,9 @@ async def getPortfolioValue(
         "last_calculated": datetime.now().isoformat()
     }
 
-    if currency == model.Currency.USD:
+    if currency == schemas.Currency.USD:
         return all_value["totalInUsd"]
-    elif currency == model.Currency.NGN:
+    elif currency == schemas.Currency.NGN:
         return all_value["totalInNgn"]
     else:
         return all_value
@@ -378,7 +364,7 @@ async def checkProductFit(
     """API endpoint to check if a product fits a portfolio's risk profile"""
     """Internal function to check if a product fits a portfolio's risk profile"""
     
-    product = db.execute(select(Product).where(Product.id.in_(products))).scalars().all()
+    product = db.execute(select(model.Product).where(model.Product.id.in_(products))).scalars().all()
 
     found_product_ids = {product.id for product in product}
 
@@ -402,23 +388,23 @@ async def checkProductFit(
         return {"fit": True}
 
 @portfolio.post("/attributes")
-async def createAttributes(db: db, attributes: schemas.PortfolioAttributesCreate, portfolio: Portfolio = Depends(getPortfolio)):
+async def createAttributes(db: db, attributes: schemas.PortfolioAttributesCreate, portfolio: model.Portfolio = Depends(getPortfolio)):
 
     if attributes.target and attributes.commitment:
-        target = Target(**attributes.target.model_dump())
-        commitment = ContributionPlan(**attributes.commitment.model_dump())
+        target = model.Target(**attributes.target.model_dump())
+        commitment = model.ContributionPlan(**attributes.commitment.model_dump())
         target.contribution_plan = commitment
         portfolio.target = target
         portfolio.contribution_plan = commitment
     elif attributes.target:
         if portfolio.target:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target already exists")
-        target = Target(**attributes.target.model_dump())
+        target = model.Target(**attributes.target.model_dump())
         portfolio.target = target
     elif attributes.plan:
         if portfolio.contribution_plan:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contribution plan already exists")
-        commitment = ContributionPlan(**attributes.plan.model_dump())
+        commitment = model.ContributionPlan(**attributes.plan.model_dump())
         portfolio.contribution_plan = commitment
     # else:
     #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target or plan is required")
@@ -429,10 +415,10 @@ async def createAttributes(db: db, attributes: schemas.PortfolioAttributesCreate
     return portfolio
 
 @portfolio.put("/")
-async def createTarget(db: db, attributes: schemas.PortfolioAttributesUpdate, portfolio: Portfolio = Depends(getPortfolio)):
+async def createTarget(db: db, attributes: schemas.PortfolioAttributesUpdate, portfolio: model.Portfolio = Depends(getPortfolio)):
   if attributes.target and attributes.commitment:
-    target = Target(**attributes.target.model_dump())
-    commitment = ContributionPlan(**attributes.commitment.model_dump())
+    target = model.Target(**attributes.target.model_dump())
+    commitment = model.ContributionPlan(**attributes.commitment.model_dump())
     target.contribution_plan = commitment
     portfolio.target = target
   
@@ -443,15 +429,15 @@ async def createTarget(db: db, attributes: schemas.PortfolioAttributesUpdate, po
         if difference is greater than 10%, request for a reallocation
     """
 
-    target = Target(**attributes.target.model_dump())
+    target = model.Target(**attributes.target.model_dump())
     portfolio.target = target
 
   if attributes.commitment:
-    commitment = ContributionPlan(**attributes.commitment.model_dump())
+    commitment = model.ContributionPlan(**attributes.commitment.model_dump())
     portfolio.contribution_plan = commitment
 
   if attributes.type:
-    portfolio.type = PortfolioType(attributes.type)
+    portfolio.type = schemas.PortfolioType(attributes.type)
 
   if attributes.description:
     portfolio.description = attributes.description
@@ -465,17 +451,17 @@ async def createTarget(db: db, attributes: schemas.PortfolioAttributesUpdate, po
   return portfolio
 
 @portfolio.post("/plan")
-async def createPlan(db: db, portfolio: Portfolio = Depends(getPortfolio), plan: schemas.CommitmentCreate = Body(), target: Optional[schemas.TargetCreate] = None):
+async def createPlan(db: db, portfolio: model.Portfolio = Depends(getPortfolio), plan: schemas.CommitmentCreate = Body(), target: Optional[schemas.TargetCreate] = None):
 
   if portfolio.contribution_plan:
      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contribution plan already exists")
-  if portfolio.type != PortfolioType.LIQUID.value:
+  if portfolio.type != schemas.PortfolioType.LIQUID.value:
      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid portfolio type")
     
-  plan = ContributionPlan(**plan.model_dump())
+  plan = model.ContributionPlan(**plan.model_dump())
   
   if target:
-    target = Target(**target.model_dump())
+    target = model.Target(**target.model_dump())
     plan.target = target
   
   plan.portfolio_id = portfolio.id

@@ -19,136 +19,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship,
 from sqlalchemy.sql import func
 from decimal import Decimal
 import enum
+import schemas
 
 money = Annotated[Decimal, 20]
 rate = Annotated[Decimal, 3]
 
-
-class AssetClass(enum.Enum):
-    USEQUITY='US Equities'
-    NGEQUITY='Nigeria Equities'    
-    USBONDS='US Bonds'
-    USTREASURY='US Treasury'
-    NGBONDS='Nigeria Bonds'
-    NGTREASURY='Nigeria Treasury Bills'
-    USCPAPER='US Commercial Debt'
-    NGCPAPER='Nigeria Commercial Paper'
-    USCORP='US Corporate Bond'
-    NGCORP='Nigeria Corporate Bond'
-    GLOBALEQUITY='Global Equities'
-    NGREAL='Nigeria Real Estate'
-    USREAL='US Real Estate'
-    NGPRIVATE='Nigeria Private Debt'
-    USPRIVATE='US Private Debt'
-    USDEPOSIT='USD Deposits'
-    NGDEPOSIT='NGN Deposits'
-    NGEURO='Nigeria Eurobonds'
-    SSEUR0='Sub-Sahara Africa Eurobonds'
-    FREUR0='Frontier Market Eurobonds'
-    FIXEDINCOME='Fixed Income'
-    MONEYMARKET='Money Market'
-    OTHER='Other'
-
-class ProductClass(enum.Enum):
-    DEPOSIT = "Deposit"
-    EQUITY = "Equity"
-    ETF = "Etf"
-    FUND = 'Fund'
-    CRYPTO = "Crypto"
-    MUTUAL_FUND = "Mutual Fund"
-
-class RiskLevel(enum.Enum):
-    LOW = "low"
-    MODERATE = "moderate"
-    HIGH = "high"
-
-class HouseholdIncome(enum.Enum):
-    SINGLE = "single"
-    DOUBLED = "double"
-
-class IncomeSource(enum.Enum):
-    SALARY = "salary"
-    BUSINESS = "business"
-    INVESTMENT = "investment"
-    RENT = "rent"
-    OTHER = "other"
-    NONE = "none"
-
-class Currency(enum.Enum):
-    NGN = "NGN"
-    USD = "USD"
-
-class EntrySide(enum.Enum):
-    DEBIT = "debit"
-    CREDIT = "credit"
-
-class TransactionType(enum.Enum):
-    DEPOSIT = "deposit"
-    WITHDRAWAL = "withdrawal"
-    INVESTMENT = "investment"
-    DIVIDEND = "dividend"
-    INTEREST = "interest"
-    LIQUIDATION = "liquidation"
-    FEE = "fee"
-    TAX = "tax"
-    TRANSFER = "transfer"
-    BUY = "buy"
-    SELL = "sell"
-
-class PortfolioType(enum.Enum):
-    TARGET = "target"
-    GROWTH = "growth"
-    EMERGENCY = "emergency"
-    LIQUID = "liquid"
-    INCOME = "income"
-    INVEST = "invest"
-
-class Frequency(enum.Enum):
-    DAILY = "daily"
-    WEEKLY = "weekly"
-    MONTHLY = "monthly"
-    QUARTERLY = "quarterly"
-    ANNUALLY = "annually"
-
-class VariableType(enum.Enum):
-    STOCK = "stock"
-    BOND = "bond"
-    MUTUAL_FUND = "mutual_fund"
-    MONEY_MARKET = "money_market"
-    ETF = "etf"
-    COMMODITY = "commodity"
-    REAL_ESTATE = "real_estate"
-    CRYPTOCURRENCY = "cryptocurrency"
-    OTHER = "other"
-
-class InterestPay(enum.Enum):
-    MONTHLY = "monthly"
-    QUARTERLY = "quarterly"
-    HALFYEARLY = "half-yearly"
-    ANNUALLY = "annually"
-    ATMATURITY = "at-maturity"
-
-class TrasnsactionStatus(enum.Enum):
-    PENDING = "pending"
-    REVERSED = "reversed"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-class AccountType(enum.Enum):
-    ASSET = "asset"
-    LIABILITY = "liability"
-    EQUITY = "equity"
-    REVENUE = "revenue"
-    EXPENSE = "expense"
-    INCOME = "income"
-
-class WealthObjectiveBase(enum.Enum):
-    INDEPENDENCE = "independence"
-    RETIREMENT = "retirement"
-    EDUCATION = "education"
-    OTHER = "other"
-    GROWTH = "growth"
-    INCOME = "income"
 
 class Base(DeclarativeBase):
     registry(
@@ -159,19 +34,6 @@ class Base(DeclarativeBase):
 
     )
 
-class AdminGroup(enum.Enum):
-    EXECUTIVE = "executive"
-    OPERATIONS = "operations"
-    SUPPORT = "support"
-    SUPER = "superAdmin"
-    ADMIN = "admin"
-
-class AdminRole(enum.Enum):
-    READ = "read"
-    WRITE = "write"
-    DELETE = "delete"
-    APPROVE = "approve"
-    SUPER = "superAdmin"
 
 class AdminUser(Base):
     __tablename__ = "adminuser"
@@ -181,8 +43,8 @@ class AdminUser(Base):
     last_name: Mapped[str]
     phone_number: Mapped[Optional[str]] = mapped_column(unique=True)
     password: Mapped[Optional[str]]
-    group: Mapped[AdminGroup]
-    role: Mapped[AdminRole]
+    group: Mapped[schemas.AdminGroup]
+    role: Mapped[schemas.AdminRole]
     createdBy: Mapped[Optional[int]] = mapped_column(ForeignKey("adminuser.id"))
     is_active: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -207,16 +69,17 @@ class User(Base):
         server_default=func.now(), onupdate=func.now()
     )
 
-    wallets: Mapped[List["Wallet"]] = relationship(back_populates="user", lazy='selectin')
+    wallets: Mapped[List["Wallet"]] = relationship(back_populates="user")
     portfolios: Mapped[List["Portfolio"]] = relationship(back_populates="user", lazy='selectin')
-    riskProfile: Mapped[Optional["RiskProfile"]] = relationship(back_populates="user", lazy='selectin')
-    kyc: Mapped[Optional["Kyc"]] = relationship(back_populates="user", lazy='selectin')
-
+    riskProfile: Mapped[Optional["RiskProfile"]] = relationship(back_populates="user")
+    kyc: Mapped[Optional["Kyc"]] = relationship(back_populates="user")
+    anchor_user: Mapped[Optional["AnchorUser"]] = relationship(back_populates="user")
+    user_address: Mapped[Optional["UserAddress"]] = relationship(back_populates="user")
 
 class UserAddress(Base):
     __tablename__ = "useraddress"
     id: Mapped[int] = mapped_column(primary_key=True)
-    User_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
     house_number: Mapped[Optional[str]]
     address_line_1: Mapped[str]
     address_line_2: Mapped[Optional[str]]
@@ -225,23 +88,29 @@ class UserAddress(Base):
     country: Mapped[str]
     postal_code: Mapped[Optional[str]]
 
+    user: Mapped["User"] = relationship(back_populates="user_address")
+
 
 class Kyc(Base):
     __tablename__ = "kyc"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    address_id: Mapped[int] = mapped_column(ForeignKey("useraddress.id"))
-    gender: Mapped[str]
-    nin: Mapped[str]
+    bvn: Mapped[str]
+    idType: Mapped[schemas.IDType]
+    idNumber: Mapped[str]
+    idFrontImage: Mapped[Optional[str]]
+    idBackImage: Mapped[Optional[str]]
+    idExpirationDate: Mapped[datetime]
+    selfieImage: Mapped[Optional[str]]
+    addresslineOne: Mapped[str]
+    addresslineTwo: Mapped[Optional[str]]
+    city: Mapped[str]
+    state: Mapped[schemas.NigeriaState]
+    postalCode: Mapped[str]
+    addressProofType: Mapped[schemas.AddressProofType]
+    addressProofImage: Mapped[Optional[str]]
+    taxId: Mapped[Optional[str]]
     is_complete: Mapped[bool] = mapped_column(default=False)
-    nin_front_image: Mapped[Optional[str]]
-    nin_back_image: Mapped[Optional[str]]
-    passport_number: Mapped[Optional[str]]
-    passport_image: Mapped[Optional[str]]
-    address_proof_image: Mapped[Optional[str]]
-    utility_bill_image: Mapped[Optional[str]]
-    bank_statement_image: Mapped[Optional[str]]
-    selfie_image: Mapped[Optional[str]]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
@@ -249,24 +118,36 @@ class Kyc(Base):
 
     user: Mapped["User"] = relationship(back_populates="kyc")
 
+class AnchorUser(Base):
+    __tablename__ = "anchoruser"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    anchor_customer_id: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["User"] = relationship(back_populates="anchor_user")
 
 class RiskProfile(Base):
     __tablename__ = "riskprofile"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    gender: Mapped[str]
     monthly_income: Mapped[money]
-    primary_income_currency: Mapped[Currency]
-    primary_income_source: Mapped[IncomeSource]
+    primary_income_currency: Mapped[schemas.Currency]
+    primary_income_source: Mapped[schemas.IncomeSource]
     annual_rent: Mapped[money]
     is_single: Mapped[bool]
     dependents: Mapped[int] = mapped_column(default=0)
     children: Mapped[int] = mapped_column(default=0)
     wealth_value: Mapped[money]
-    household_income: Mapped[HouseholdIncome] = mapped_column(default=HouseholdIncome.SINGLE)
-    secondary_income_source: Mapped[Optional[IncomeSource]] = mapped_column(default=IncomeSource.NONE)
+    household_income: Mapped[schemas.HouseholdIncome] = mapped_column(default=schemas.HouseholdIncome.SINGLE)
+    secondary_income_source: Mapped[Optional[schemas.IncomeSource]] = mapped_column(default=schemas.IncomeSource.NONE)
     primary_provider: Mapped[bool] = mapped_column(default=False)   
-    objective: Mapped[WealthObjectiveBase]
-    capacity: Mapped[RiskLevel] = mapped_column(default=RiskLevel.LOW)
+    objective: Mapped[schemas.WealthObjectiveBase]
+    capacity: Mapped[schemas.RiskLevel] = mapped_column(default=schemas.RiskLevel.LOW)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -318,9 +199,9 @@ class Product(Base):
     risk_level: Mapped[int]
     horizon: Mapped[int]
     img: Mapped[Optional[str]]
-    currency: Mapped[Currency]
+    currency: Mapped[schemas.Currency]
     category: Mapped[str]
-    product_class: Mapped[Optional[ProductClass]] = mapped_column()
+    product_class: Mapped[Optional[schemas.ProductClass]] = mapped_column()
     is_active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -339,7 +220,7 @@ class ProductAllocation(Base):
     __tablename__ = "productallocation"
     id: Mapped[int] = mapped_column(primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id"))
-    asset_class: Mapped[AssetClass]
+    asset_class: Mapped[schemas.AssetClass]
     allocation: Mapped[float]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -361,7 +242,7 @@ class Benchmark(Base):
     name: Mapped[str] = mapped_column(unique=True)
     description: Mapped[Optional[str]]
     source: Mapped[DataSource]
-    currency: Mapped[Currency]
+    currency: Mapped[schemas.Currency]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
@@ -502,12 +383,12 @@ class Transaction(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     category: Mapped[str]  # e.g., "deposit", "withdrawal"
     amount: Mapped[money]
-    status: Mapped[TrasnsactionStatus]
-    currency: Mapped[Currency]
+    status: Mapped[schemas.TrasnsactionStatus]
+    currency: Mapped[schemas.Currency]
     journal_id: Mapped[int] = mapped_column(ForeignKey("journal.id"))
     journal: Mapped[Optional["Journal"]] = relationship()
     date: Mapped[datetime] = mapped_column(server_default=func.now())
-    type: Mapped[TransactionType]  # e.g., "deposit", "withdrawal"
+    type: Mapped[schemas.TransactionType]  # e.g., "deposit", "withdrawal"
 
     __mapper_args__ = {
         "polymorphic_identity": "transaction",
@@ -552,7 +433,7 @@ class Wallet(Base):
         server_default=func.now(), onupdate=func.now()
     )
     user: Mapped["User"] = relationship(back_populates="wallets")
-    currency: Mapped[Currency]
+    currency: Mapped[schemas.Currency]
     transactions: Mapped[List["WalletTransaction"]] = relationship(back_populates="wallet", lazy='selectin')
 
 
@@ -561,7 +442,7 @@ class Portfolio(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
     active: Mapped[bool] = mapped_column(default=True)
-    type: Mapped[PortfolioType] = mapped_column(default=PortfolioType.LIQUID)
+    type: Mapped[schemas.PortfolioType] = mapped_column(default=schemas.PortfolioType.LIQUID)
     risk: Mapped[int] = mapped_column(default=1)
     duration: Mapped[Optional[int]]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -597,7 +478,7 @@ class Target(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolio.id"), unique=True)
     amount: Mapped[Decimal]
-    currency: Mapped[Currency]
+    currency: Mapped[schemas.Currency]
     target_date: Mapped[Optional[datetime]]
     achieved: Mapped[bool] = mapped_column(default=False)
     achieved_date: Mapped[Optional[datetime]]
@@ -616,8 +497,8 @@ class ContributionPlan(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolio_id: Mapped[Optional[int]] = mapped_column(ForeignKey("portfolio.id"), nullable=True, unique=True)
     amount: Mapped[Decimal]
-    currency: Mapped[Currency]
-    frequency: Mapped[Frequency]
+    currency: Mapped[schemas.Currency]
+    frequency: Mapped[schemas.Frequency]
     start_date: Mapped[datetime]
     end_date: Mapped[Optional[datetime]]
     active: Mapped[bool] = mapped_column(default=True)
@@ -651,8 +532,8 @@ class Account(Base):
     description: Mapped[Optional[str]]
     is_header: Mapped[bool] = mapped_column(default=False)  # True for header, False for detail
     parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("account.id"), nullable=True)
-    currency: Mapped[Currency]  # If you use multi-currency
-    account_type: Mapped[AccountType]  # e.g., "asset", "liability", "income", "expense", etc.
+    currency: Mapped[schemas.Currency]  # If you use multi-currency
+    account_type: Mapped[schemas.AccountType]  # e.g., "asset", "liability", "income", "expense", etc.
     as_of: Mapped[datetime] = mapped_column(server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -679,22 +560,17 @@ class Entries(Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("account.id"))
     journal_id: Mapped[int] = mapped_column(ForeignKey("journal.id"))
     amount: Mapped[money]
-    side: Mapped[EntrySide]  # e.g., "credit", "debit"
+    side: Mapped[schemas.EntrySide]  # e.g., "credit", "debit"
     description: Mapped[Optional[str]]
 
     journal: Mapped[Optional["Journal"]] = relationship(back_populates="entries")
     account: Mapped[Optional["Account"]] = relationship(back_populates="entries", lazy='selectin')
 
-
-class CashFlowType(enum.Enum):
-    INFLOW = "inflow"
-    OUTFLOW = "outflow"
-
 class CashFlowStatus(Base):
     __tablename__ = "cashflowstatus"
     id: Mapped[int] = mapped_column(primary_key=True) 
-    status: Mapped[TrasnsactionStatus]
-    type: Mapped[CashFlowType]
+    status: Mapped[schemas.TrasnsactionStatus]
+    type: Mapped[schemas.CashFlowType]
     transaction_id: Mapped[int] = mapped_column(ForeignKey("transaction.id"))
     transaction: Mapped[Optional[PortfolioTransaction]] = relationship(lazy='selectin')
 

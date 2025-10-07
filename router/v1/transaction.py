@@ -2,17 +2,17 @@ from fastapi import APIRouter, Depends, status, HTTPException, Query, Security
 from fastapi.security import SecurityScopes
 from sqlalchemy.orm import Session, join
 from sqlalchemy import select, func, case, and_, or_
-from . import auth
-from ...database import db
-from ... import model
-from ... import schemas
+from ..v1 import auth
+from database import db
+import model
+import schemas
 from typing import Annotated, Union, Optional, List
 from pydantic import BaseModel
 from datetime import datetime, timedelta
-from .portfolio import getPortfolio
-from .deposit import getLiquidationValue
-from .journal import prepareJournal
-from .wallet import generateWalletTransaction, getWalletBalance
+from ..v1.portfolio import getPortfolio
+from ..v1.deposit import getLiquidationValue
+from ..v1.journal import prepareJournal
+from ..v1.wallet import generateWalletTransaction, getWalletBalance
 
 transaction = APIRouter(prefix="/transaction", tags=["transaction"])
 

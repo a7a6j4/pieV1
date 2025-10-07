@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Depends, Header, Cookie, HTTPException, status
+from fastapi import FastAPI, File, Request, Depends, Header, Cookie, HTTPException, UploadFile, status, Body    
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, Response, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -6,11 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 from typing import Annotated
-from .router.v1 import user, auth, account, transaction, portfolio, product, journal, wallet, deposit, advisory, admin
+from router.v1 import user, auth, account, transaction, portfolio, product, journal, wallet, deposit, advisory, admin
 import os
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
-from .database import create_db_and_tables, db
+from database import create_db_and_tables, db
 from sqlalchemy import select, func
+from utils.minio import upload_file
+import schemas
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -60,23 +62,21 @@ app.include_router(prefix=v1,router=admin.admin)
 
 templates = Jinja2Templates(directory="templates")  # 'templates' is your HTML folder
 
-@app.get("/products", response_class=HTMLResponse)
-async def read_root(request: Request, db: db):
-    products = await product.getProducts(db)
+# @app.get("/products", response_class=HTMLResponse)
+# async def read_root(request: Request, db: db):
+#     products = await product.getProducts(db)
 
-    return templates.TemplateResponse("index.html", {"request": request, "products": products})
+#     return templates.TemplateResponse("index.html", {"request": request, "products": products})
 
-@app.get("/product/{id}", response_class=HTMLResponse)
-async def readProductPage(id: int, request: Request, db: db):
-    prod = await product.getProduct(product_id=id, db=db)
+# @app.get("/product/{id}", response_class=HTMLResponse)
+# async def readProductPage(id: int, request: Request, db: db):
+#     prod = await product.getProduct(product_id=id, db=db)
 
-    return templates.TemplateResponse("product.html", {"request": request, "product": prod})
+#     return templates.TemplateResponse("product.html", {"request": request, "product": prod})
 
-@app.get("/user/{id}", response_class=HTMLResponse)
-async def readUserPage(id: int, request: Request, db: db):
-    # fetch ORM object with relationships available in template
-    user_obj = await user.get_user(user_id=id, db=db)
-    return templates.TemplateResponse("user.html", {"request": request, "user": user_obj})
-
-
+# @app.get("/user/{id}", response_class=HTMLResponse)
+# async def readUserPage(id: int, request: Request, db: db):
+#     # fetch ORM object with relationships available in template
+#     user_obj = await user.get_user(user_id=id, db=db)
+#     return templates.TemplateResponse("user.html", {"request": request, "user": user_obj})
 
