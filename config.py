@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALPACA_API_KEY: str
     PASSWORD_CHANGE_MINUTES: int
-    ANCHOR_API_KEY_SANDBOX: str
     ALPACA_API_KEY: str
     ALPACA_API_SECRET: str
     MONNIFY_KEY: str

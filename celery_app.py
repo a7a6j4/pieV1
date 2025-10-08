@@ -46,11 +46,11 @@ class CallbackTask(celery.Task):
         except Exception:
             pass
 
-# Configure Celery with RabbitMQ as both broker and backend
+# Configure Celery with RabbitMQ as broker and RPC as backend
 celery_app = celery.Celery(
     'task',
     broker=settings.RABBITMQ_URL,  # RabbitMQ for message queuing
-    backend=settings.RABBITMQ_URL,  # RabbitMQ for result storage
+    backend='rpc://',  # RPC backend for result storage
     result_expires=3600,  # Results expire after 1 hour
     task_serializer='json',
     accept_content=['json'],
@@ -120,15 +120,8 @@ celery_app.conf.update(
         }
     },
     
-    # Result backend configuration for RabbitMQ
-    result_backend_transport_options={
-        'priority_steps': list(range(10)),
-        'sep': ':',
-        'queue_order_strategy': 'priority',
-    },
-    
-    # Task result settings
-    result_persistent=True,  # Persist results
+    # Task result settings for RPC backend
+    result_persistent=False,  # RPC doesn't persist results
     result_cache_max=10000,  # Cache up to 10k results
     result_expires=3600,  # Results expire after 1 hour
 )
@@ -192,8 +185,8 @@ def sendOtpTask(self, otp: str, email: str, type: str):
         logger.info(f"Attempting to send OTP to {email} (attempt {self.request.retries + 1})")
         response = asyncio.run(sendOtpEmail(otp=otp, email=email, otpType=OtpType(type)))
         
-        if response.get('status') != 'success':
-            raise Exception(f"OTP sending failed: {response}")
+        if response not in [200, 201]:
+            raise Exception(f"OTP sending failed with status code: {response}")
         
         logger.info(f"OTP sent successfully to {email}")
         return {

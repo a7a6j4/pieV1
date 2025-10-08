@@ -31,9 +31,6 @@ async def signup(db: db, data = Security(auth.verifyOtp, scopes=[schemas.OtpType
     user = model.User(first_name=data.get('first_name'), last_name=data.get('last_name'), other_names=data.get('other_names'), phone_number=data.get('phone_number'), email=data.get('email'), is_active=False)
 
 
-
-
-
     db.add(user)
     db.commit()
     db.refresh(user)

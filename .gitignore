@@ -12,3 +12,5 @@ venv/
 dist/
 build/
 uploads/
+alembic.ini
+alembic/
