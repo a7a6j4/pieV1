@@ -71,8 +71,8 @@ class User(Base):
 
     wallets: Mapped[List["Wallet"]] = relationship(back_populates="user")
     portfolios: Mapped[List["Portfolio"]] = relationship(back_populates="user", lazy='selectin')
-    riskProfile: Mapped[Optional["RiskProfile"]] = relationship(back_populates="user")
-    kyc: Mapped[Optional["Kyc"]] = relationship(back_populates="user")
+    riskProfile: Mapped[Optional["RiskProfile"]] = relationship(back_populates="user", lazy='selectin')
+    kyc: Mapped[Optional["Kyc"]] = relationship(back_populates="user", lazy='selectin')
     anchor_user: Mapped[Optional["AnchorUser"]] = relationship(back_populates="user")
     user_address: Mapped[Optional["UserAddress"]] = relationship(back_populates="user")
 
