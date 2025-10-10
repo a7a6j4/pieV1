@@ -681,12 +681,12 @@ opr = {
         "subject": "Your Signup OTP"
     },
     "createPassword" : {
-        "seconds": 90,
+        "seconds": 300,
         "name": "Create Password",
         "subject": "Create Password OTP"
     },
     "resetPassword" : {
-        "seconds": 180,
+        "seconds": 300,
         "name": "Reset Password",
         "subject": "Reset Password OTP"
     },

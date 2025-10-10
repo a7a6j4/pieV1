@@ -58,7 +58,7 @@ async def set_password(db: db, password = Body(..., embed=True), payload = Secur
     ngn_wallet = model.Wallet(currency="NGN")
     user.wallets = [usd_wallet, ngn_wallet]
 
-    liquid = model.Portfolio(type=schemas.PortfolioType.LIQUID.value, duration=1, risk=1, user_id=user.id)
+    liquid = model.Portfolio(type=schemas.PortfolioType.LIQUID, duration=1, risk=1, user_id=user.id)
     user.portfolios.append(liquid)
 
     db.add(user)
