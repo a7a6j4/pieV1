@@ -386,9 +386,10 @@ class Transaction(Base):
     status: Mapped[schemas.TrasnsactionStatus]
     currency: Mapped[schemas.Currency]
     journal_id: Mapped[int] = mapped_column(ForeignKey("journal.id"))
-    journal: Mapped[Optional["Journal"]] = relationship()
     date: Mapped[datetime] = mapped_column(server_default=func.now())
     type: Mapped[schemas.TransactionType]  # e.g., "deposit", "withdrawal"
+    
+    journal: Mapped[Optional["Journal"]] = relationship()
 
     __mapper_args__ = {
         "polymorphic_identity": "transaction",
