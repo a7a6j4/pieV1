@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     MINIO_ACCESS_KEY: str
     MINIO_SECRET_KEY: str
     ANCHOR_API_KEY_SANDBOX: str
+    ANCHOR_API_KEY_LIVE: str
     BREVO_API_KEY: str
     HOST: str
     PORT: int

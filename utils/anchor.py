@@ -2,12 +2,14 @@ import requests
 import schemas
 from config import settings
 
-ANCHOR_API_KEY_SANDBOX = settings.ANCHOR_API_KEY_SANDBOX
+anchor_api_key_sandbox = settings.ANCHOR_API_KEY_SANDBOX
+anchor_api_key_live = settings.ANCHOR_API_KEY_LIVE
 
-url = "https://api.sandbox.getanchor.co/api/v1"
+url_sandbox = "https://api.sandbox.getanchor.co/api/v1"
+url_live = "https://api.anchor.co/api/v1"
 
 async def createAnchorCustomer(
-  data: dict
+  data: dict, mode: schemas.AnchorMode
   ):
 
   payload = { "data": { "attributes": {
@@ -44,21 +46,102 @@ async def createAnchorCustomer(
   headers = {
     "accept": "application/json",
     "content-type": "application/json",
-    "x-anchor-key": ANCHOR_API_KEY_SANDBOX
+    "x-anchor-key": anchor_api_key_sandbox if mode == schemas.AnchorMode.SANDBOX else anchor_api_key_live
 }
 
-  response = requests.post(f"{url}/customers", json=payload, headers=headers)
-  return response
+  response = requests.post(f"{url_sandbox if mode == schemas.AnchorMode.SANDBOX else url_live}/customers", json=payload, headers=headers)
+  return response.json()
 
-async def getAnchorCustomer(anchor_customer_id: str):
+async def getAnchorCustomer(anchor_customer_id: str, mode: schemas.AnchorMode):
 
   headers = {
     "accept": "application/json",
     "content-type": "application/json",
-    "x-anchor-key": ANCHOR_API_KEY_SANDBOX
+    "x-anchor-key": anchor_api_key_sandbox if mode == schemas.AnchorMode.SANDBOX else anchor_api_key_live 
   }
 
-  response = requests.get(f"{url}/customers/{anchor_customer_id}", headers=headers)
-  if response.status_code not in [200, 201]:
-    raise Exception(response.text)
+  response = requests.get(f"{url_sandbox if mode == schemas.AnchorMode.SANDBOX else url_live}/customers/{anchor_customer_id}", headers=headers)
+  return response
+
+async def validateAnchoTier2Kyc(anchor_customer_id: str, mode: schemas.AnchorMode):
+  request_url = f"{url_sandbox if mode == schemas.AnchorMode.SANDBOX else url_live}/customers/{anchor_customer_id}/verification/individual"
+  payload = { "data": {
+  "attributes": { "level": "TIER_2" },
+  "type": "Verification"
+  } }
+  headers = {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-anchor-key": anchor_api_key_sandbox if mode == schemas.AnchorMode.SANDBOX else anchor_api_key_live
+  }
+  
+  response = requests.post(request_url, json=payload, headers=headers)
   return response.json()
+
+async def validateAnchorTier3Kyc(anchor_customer_id: str, mode: schemas.AnchorMode):
+  request_url = f"{url_sandbox if mode == schemas.AnchorMode.SANDBOX else url_live}/customers/{anchor_customer_id}/verification/individual"
+  payload = { "data": {
+  "attributes": { "level": "TIER_3" },
+  "type": "Verification"
+  } }
+  headers = {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-anchor-key": anchor_api_key_sandbox if mode == schemas.AnchorMode.SANDBOX else anchor_api_key_live
+  }
+  response = requests.post(request_url, json=payload, headers=headers)
+  return response.json()
+
+async def uploadAnchorCustomerDocument(anchor_customer_id: str, document_id: str, file_data, mode: schemas.AnchorMode):
+  request_url = f"{url_sandbox if mode == schemas.AnchorMode.SANDBOX else url_live}/documents/upload-document/{anchor_customer_id}/{document_id}"
+  headers = {
+    "accept": "application/json",
+    "content-type": "application/json",
+    "x-anchor-key": anchor_api_key_sandbox if mode == schemas.AnchorMode.SANDBOX else anchor_api_key_live
+  }
+
+  response = requests.post(request_url, files=file_data, headers=headers)
+  return response.json()
+
+async def createAnchorDepositAccount(anchor_customer_id: str, mode: schemas.AnchorMode = schemas.AnchorMode.SANDBOX):
+
+  request_url = f"{url_sandbox if mode == schemas.AnchorMode.SANDBOX else url_live}/accounts" 
+
+  payload = { "data": {
+        "attributes": { "productName": "SAVINGS" },
+        "relationships": { "customer": { "data": {
+                    "id": anchor_customer_id,
+                    "type": "IndividualCustomer"
+                } } },
+        "type": "DepositAccount"
+    } }
+  headers = {
+    "accept": "application/json",
+    "content-type": "application/json",
+    "x-anchor-key": anchor_api_key_sandbox if mode == schemas.AnchorMode.SANDBOX else anchor_api_key_live
+}
+
+  response = requests.post(request_url, json=payload, headers=headers)
+  return response.json()
+
+
+#   url = "https://api.sandbox.getanchor.co/api/v1/accounts"
+
+# payload = { "data": {
+#         "attributes": {
+#             "customer": {
+#                 "id": "17597958382113-anc_ind_cst",
+#                 "type": "IndividualCustomer"
+#             },
+#             "currency": "NGN",
+#             "productName": "sfdfsd"
+#         },
+#         "type": "ElectronicAccount"
+#     } }
+# headers = {
+#     "accept": "application/json",
+#     "content-type": "application/json",
+#     "x-anchor-key": "hfVz5.1f836e3cf846c4fb0695e31cf2a4f2eff8869c878f950a65385658c5aca2e0834f064e545e355d852b734b0b6918e88dd0d2"
+# }
+
+# response = requests.post(url, json=payload, headers=headers)

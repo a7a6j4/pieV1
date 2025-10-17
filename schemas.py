@@ -853,3 +853,7 @@ class CommitmentCreate(BaseModel):
 class TargetCommit(BaseModel):
   target: Optional[TargetCreate]
   commitment: Optional[CommitmentCreate]
+
+class AnchorMode(enum.Enum):
+    SANDBOX = "sandbox"
+    LIVE = "live"

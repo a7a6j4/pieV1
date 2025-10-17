@@ -73,7 +73,7 @@ class User(Base):
     portfolios: Mapped[List["Portfolio"]] = relationship(back_populates="user", lazy='selectin')
     riskProfile: Mapped[Optional["RiskProfile"]] = relationship(back_populates="user", lazy='selectin')
     kyc: Mapped[Optional["Kyc"]] = relationship(back_populates="user", lazy='selectin')
-    anchor_user: Mapped[Optional["AnchorUser"]] = relationship(back_populates="user")
+    anchor_user: Mapped[Optional["AnchorUser"]] = relationship(back_populates="user", lazy='selectin')
     user_address: Mapped[Optional["UserAddress"]] = relationship(back_populates="user")
 
 class UserAddress(Base):
@@ -97,6 +97,7 @@ class Kyc(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
     bvn: Mapped[str]
     idType: Mapped[schemas.IDType]
+    gender: Mapped[schemas.Gender]
     idNumber: Mapped[str]
     idFrontImage: Mapped[Optional[str]]
     idBackImage: Mapped[Optional[str]]
@@ -110,7 +111,7 @@ class Kyc(Base):
     addressProofType: Mapped[schemas.AddressProofType]
     addressProofImage: Mapped[Optional[str]]
     taxId: Mapped[Optional[str]]
-    is_complete: Mapped[bool] = mapped_column(default=False)
+    verified: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
@@ -121,8 +122,9 @@ class Kyc(Base):
 class AnchorUser(Base):
     __tablename__ = "anchoruser"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    anchor_customer_id: Mapped[str]
+    userId: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    customerId: Mapped[str] = mapped_column(unique=True)
+    depositAccountId: Mapped[Optional[str]] = mapped_column(unique=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
@@ -130,11 +132,12 @@ class AnchorUser(Base):
 
     user: Mapped["User"] = relationship(back_populates="anchor_user")
 
+    __table_args__ = (UniqueConstraint("userId", "customerId"),UniqueConstraint("userId", "depositAccountId"), UniqueConstraint("customerId", "depositAccountId"))
+
 class RiskProfile(Base):
     __tablename__ = "riskprofile"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    gender: Mapped[str]
     monthly_income: Mapped[money]
     primary_income_currency: Mapped[schemas.Currency]
     primary_income_source: Mapped[schemas.IncomeSource]

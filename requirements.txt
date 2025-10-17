@@ -111,3 +111,4 @@ watchfiles==1.0.5
 wcwidth==0.2.13
 websockets==15.0.1
 yfinance==0.2.65
+python-magic==0.4.27

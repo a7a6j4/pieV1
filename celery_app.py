@@ -1,8 +1,8 @@
+import asyncio
 import celery
 from utils.brevo import sendOtpEmail
-from utils.anchor import createAnchorCustomer, getAnchorCustomer
-from schemas import OtpType
-import asyncio
+from utils.anchor import createAnchorCustomer, getAnchorCustomer, validateAnchoTier2Kyc, validateAnchorTier3Kyc, uploadAnchorCustomerDocument, createAnchorDepositAccount
+from utils.minio import download_s3_object, download_s3_object_for_requests
 import schemas
 from datetime import datetime
 from typing import Optional
@@ -12,6 +12,7 @@ from database import SessionLocal, engine
 import model
 from config import settings
 import logging
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -83,7 +84,9 @@ celery_app.conf.update(
         'validate_kyc_task': {'queue': 'kyc_queue'},
         'link_anchor_account_task': {'queue': 'anchor_queue'},
         'send_otp_task': {'queue': 'otp_queue'},
+        'kyc_verification_task': {'queue': 'kyc_queue'},
         'monitor_failed_tasks': {'queue': 'monitor_queue'},
+        'create_anchor_deposit_account_task': {'queue': 'anchor_queue'},
     },
     
     # Define durable queues for persistence
@@ -126,42 +129,25 @@ celery_app.conf.update(
     result_expires=3600,  # Results expire after 1 hour
 )
 
-async def validateKyc(email: str):
+async def linkAnchorAccount(anchor_customer_id: str, user_id: int):
     db = SessionLocal()
     try:
-        user = db.execute(select(model.User).where(model.User.email == email)).scalar_one_or_none()
-        if not user or not user.kyc:
-            raise Exception(f"User or KYC not found for email: {email}")
-        
-        user.kyc.is_complete = True
-        db.add(user.kyc)
-        db.commit()
-        db.refresh(user)
-        logger.info(f"KYC validated successfully for user: {email}")
-        return user.kyc
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error validating KYC for {email}: {str(e)}")
-        raise Exception(f"KYC validation failed: {str(e)}")
-    finally:
-        db.close()
-
-async def linkAnchorAccount(anchor_customer_id: str, email: str):
-    db = SessionLocal()
-    try:
-        user = db.execute(select(model.User).where(model.User.email == email)).scalar_one_or_none()
+        user = db.get(model.User, user_id)
         if not user:
-            raise Exception(f"User not found for email: {email}")
-        
-        linkk = model.AnchorUser(user_id=user.id, anchor_customer_id=anchor_customer_id)
-        db.add(linkk)
-        db.commit()
-        db.refresh(linkk)
-        logger.info(f"Anchor account linked successfully for user: {email}")
-        return user.id
+            raise Exception(f"User not found for user_id: {user_id}")
+
+        if user.anchor_user:
+            return user.id
+        else:
+            anchor_user = model.AnchorUser(user_id=user.id, anchor_customer_id=anchor_customer_id)
+            db.add(anchor_user)
+            db.commit()
+            db.refresh(anchor_user)
+            logger.info(f"Anchor account linked successfully for user_id: {user_id}")
+            return user.id
     except Exception as e:
         db.rollback()
-        logger.error(f"Error linking anchor account for {email}: {str(e)}")
+        logger.error(f"Error linking anchor account for user_id: {user_id}: {str(e)}")
         raise Exception(f"Anchor account linking failed: {str(e)}")
     finally:
         db.close()
@@ -183,7 +169,7 @@ def sendOtpTask(self, otp: str, email: str, type: str):
     """
     try:
         logger.info(f"Attempting to send OTP to {email} (attempt {self.request.retries + 1})")
-        response = asyncio.run(sendOtpEmail(otp=otp, email=email, otpType=OtpType(type)))
+        response = asyncio.run(sendOtpEmail(otp=otp, email=email, otpType=schemas.OtpType(type)))
         
         if response not in [200, 201]:
             raise Exception(f"OTP sending failed with status code: {response}")
@@ -229,6 +215,7 @@ def createAnchorAccountTask(
     addressLine_2: Optional[str],
     middleName: Optional[str],
     maidenName: Optional[str],
+    mode: schemas.AnchorMode,
 ):
     """
     Create Anchor account task with retry logic
@@ -238,22 +225,55 @@ def createAnchorAccountTask(
     try:
         logger.info(f"Attempting to create Anchor account for {email} (attempt {self.request.retries + 1})")
         
-        response = asyncio.run(createAnchorCustomer(data=locals()))
+        response = asyncio.run(createAnchorCustomer(data=locals(), mode=schemas.AnchorMode(mode)))
         
-        if response.status_code not in [201, 200]:
-            raise Exception(f"Anchor API error: {response.status_code} - {response.text}")
-        
-        logger.info(f"Anchor account created successfully for {email}")
-        return {
+        if response.status_code in [201, 200]:
+            logger.info(f"Anchor account created successfully for {email}")
+            return {
             'status': 'success',
             'email': email,
             'anchor_response': response.json(),
             'timestamp': datetime.utcnow().isoformat()
-        }
+            }
+        elif response.status_code == 500:
+            logger.error(f"Anchor API error: {response.status_code} - {response.text}")
+            raise self.retry(exc=Exception(f"Anchor API error: {response.status_code} - {response.text}"), countdown=300, max_retries=1)
+        else:
+            logger.error(f"Anchor account creation failed for {email}: {response.status_code} - {response.text}")
         
     except Exception as exc:
         logger.error(f"Anchor account creation failed for {email}: {str(exc)}")
-        raise self.retry(exc=exc, countdown=300, max_retries=3)
+
+@celery_app.task(
+    bind=True,
+    base=CallbackTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={'max_retries': 3, 'countdown': 300},
+    retry_backoff=True,
+    retry_jitter=True,
+    name='validate_kyc_tier2_task'
+)
+def validateAnchorTier2KycTask(self, anchor_customer_id: str, mode: schemas.AnchorMode):
+    """
+    Validate KYC task with retry logic
+    Retries: 3 times with 5-minute intervals
+    Results stored in RabbitMQ
+    """
+    logger.info(f"Attempting to validate KYC for {anchor_customer_id} (attempt {self.request.retries + 1})")
+    kyc =asyncio.run(validateAnchoTier2Kyc(anchor_customer_id=anchor_customer_id, mode=schemas.AnchorMode(mode)))
+    if kyc.get('code') in [200, 201]:
+        logger.info(f"KYC validated successfully for {anchor_customer_id}")
+        return {
+            'status': 'success',
+            'anchor_customer_id': anchor_customer_id,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+    elif kyc.get('code') == 500:
+        logger.error(f"Unable to reach Anchor API: {kyc}")
+        raise self.retry(exc=Exception(f"Unable to reach Anchor API: {kyc}"), countdown=1800, max_retries=3)
+    else:
+        logger.error(f"KYC validation failed for {anchor_customer_id}: {kyc}")
+        raise Exception(f"KYC validation failed for {anchor_customer_id}: status code {kyc.get('code')}")
 
 @celery_app.task(
     bind=True,
@@ -264,34 +284,112 @@ def createAnchorAccountTask(
     retry_jitter=True,
     name='validate_kyc_task'
 )
-def validateKycTask(self, data: dict):
+def validateAnchorTier3KycTask(self, anchor_customer_id: str, mode: schemas.AnchorMode):
     """
     Validate KYC task with retry logic
     Retries: 3 times with 5-minute intervals
     Results stored in RabbitMQ
     """
-    try:
-        is_verified = data.get('included')[0].get('attributes').get('verification').get('status')
-        email = data.get('included')[0].get('attributes').get('email')
-        
-        logger.info(f"Attempting to validate KYC for {email} (attempt {self.request.retries + 1})")
-        
-        if is_verified == 'verified':
-            asyncio.run(validateKyc(email=email))
-            logger.info(f"KYC validated successfully for {email}")
-        else:
-            logger.info(f"KYC not verified for {email}")
-        
+    logger.info(f"Attempting to validate KYC for {anchor_customer_id} (attempt {self.request.retries + 1})")
+    kyc =asyncio.run(validateAnchorTier3Kyc(anchor_customer_id=anchor_customer_id, mode=schemas.AnchorMode(mode)))
+    if kyc.get('code') in [200, 201]:
+        logger.info(f"KYC validated successfully for {anchor_customer_id}")
         return {
             'status': 'success',
-            'email': email,
-            'verified': is_verified == 'verified',
+            'anchor_customer_id': anchor_customer_id,
             'timestamp': datetime.utcnow().isoformat()
         }
-        
-    except Exception as exc:
-        logger.error(f"KYC validation failed for {email}: {str(exc)}")
-        raise self.retry(exc=exc, countdown=300, max_retries=3)
+    elif kyc.get('code') == 500:
+        logger.error(f"Unable to reach Anchor API: {kyc.get('error')}")
+        raise self.retry(exc=Exception(f"Unable to reach Anchor API: {kyc.get('error')}"), countdown=300, max_retries=5)
+    else:
+        logger.error(f"KYC validation failed for {anchor_customer_id}: {kyc.get('error')}")
+        raise Exception(f"KYC validation failed for {anchor_customer_id}: {kyc.get('error')}")
+
+@celery_app.task(
+    bind=True,
+    base=CallbackTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={'max_retries': 3, 'countdown': 300},
+    retry_backoff=True,
+    retry_jitter=True,
+    name='upload_kyc_file_task'
+)
+def uploadAnchorKycDocumentTask(self, anchor_customer_id: str, document_id: str, user_id, mode: schemas.AnchorMode):
+    """
+    Upload KYC file task with retry logic
+    Retries: 3 times with 5-minute intervals
+    Results stored in RabbitMQ
+    """
+    logger.info(f"Attempting to upload KYC file for {anchor_customer_id} (attempt {self.request.retries + 1})")
+    s3_file_data = asyncio.run(download_s3_object_for_requests(bucket_name="user", object_name=f"{user_id}/kyc/{schemas.UserDocumentType.FRONT_ID.value}"))
+    file_data = { "fileData": s3_file_data }
+    upload_request = asyncio.run(uploadAnchorCustomerDocument(anchor_customer_id=anchor_customer_id, document_id=document_id, file_data=file_data, mode=schemas.AnchorMode(mode)))
+    if upload_request.get('code') in [200, 201]:
+        logger.info(f"KYC file uploaded successfully for {anchor_customer_id}")
+        return {
+        'status': 'success',
+        'anchor_customer_id': anchor_customer_id,
+        'document_id': document_id,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+    elif upload_request.get('code') == 500:
+        logger.error(f"Unable to reach Anchor API: {upload_request.get('error')}")
+        raise self.retry(exc=Exception(f"Unable to reach Anchor API: {upload_request.get('error')}"), countdown=300, max_retries=5)
+    else:
+        logger.error(f"Failed to upload KYC file for {anchor_customer_id}: {upload_request.get('error')}")
+
+@celery_app.task(
+    bind=True,
+    base=CallbackTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={'max_retries': 3, 'countdown': 300},
+    retry_backoff=True,
+    retry_jitter=True,
+    name='kyc_verification_task'
+)
+def createAnchorDepositAccountTask(self, anchor_customer_id: str, email: str, mode: schemas.AnchorMode):
+    """
+    KYC verification task with retry logic
+    Retries: 3 times with 5-minute intervals
+    Results stored in RabbitMQ
+    """
+    logger.info(f"Attempting to verify KYC for anchor_customer_id: {anchor_customer_id} (attempt {self.request.retries + 1})")
+
+    db = SessionLocal()
+    user = db.execute(select(model.User).where(model.User.email == email)).scalar_one_or_none()
+    if user is None:
+        raise Exception(f"User not found for email: {email}")
+    
+    user.kyc.verified = True
+    try:
+        db.add(user)
+        db.commit()
+        logger.info(f"KYC verified successfully for user_id: {user.id}")
+    except Exception as e:
+        db.rollback()
+        raise Exception(f"Failed to verify KYC for user_id: {user.id}: {str(e)}")
+    finally:
+        db.close()
+    
+    # create anchor deposit account
+    logger.info(f"Attempting to create Anchor deposit account for {anchor_customer_id} (attempt {self.request.retries + 1})")
+    status_code = asyncio.run(createAnchorDepositAccount(anchor_customer_id=anchor_customer_id, mode=schemas.AnchorMode(mode)))
+    if status_code.get('code') in [200, 201]:
+        logger.info(f"Anchor deposit account created successfully for {anchor_customer_id}")
+        return {
+            'status': 'success',
+            'user_id': user.id,
+            'anchor_customer_id': anchor_customer_id,
+            'timestamp': datetime.utcnow().isoformat()
+        }
+    elif status_code.get('code') == 500:
+        logger.error(f"Unable to reach Anchor API: {status_code.get('error')}")
+        raise self.retry(exc=Exception(f"Unable to reach Anchor API: {status_code.get('error')}"), countdown=1800, max_retries=3)
+    else:
+        logger.error(f"Failed to create Anchor deposit account for {anchor_customer_id}: status code {status_code.get('code')}")
+        raise Exception(f"Failed to create Anchor deposit account for {anchor_customer_id}: status code {status_code.get('code')}")
+
 
 @celery_app.task(
     bind=True,
@@ -302,35 +400,50 @@ def validateKycTask(self, data: dict):
     retry_jitter=True,
     name='link_anchor_account_task'
 )
-def linkAnchorAccountTask(self, data: dict):
+def linkAnchorAccountTask(self, **kwargs):
     """
     Link Anchor account task with retry logic
     Retries: 3 times with 5-minute intervals
     Results stored in RabbitMQ
     """
+    anchor_customer_id = kwargs.get('anchor_customer_id')
+    anchor_deposit_account_id = kwargs.get('anchor_deposit_account_id')
+    email = kwargs.get('email')
+    mode = kwargs.get('mode')
+    
     try:
-        anchor_customer_id = data.get('data').get('relationships').get('customer').get('data').get('id')
-        email = data.get('included')[0].get('attributes').get('email')
+        logger.info(f"Attempting to link Anchor account for anchor_customer_id: {anchor_customer_id} (attempt {self.request.retries + 1})")
+
+        db = SessionLocal()
+        user = db.execute(select(model.User).where(model.User.email == email)).scalar_one_or_none()
+        if user is None:
+            raise Exception(f"User not found for email: {email}")
+
+        if not user.anchor_user:
         
-        logger.info(f"Attempting to link Anchor account for {email} (attempt {self.request.retries + 1})")
-        
-        user_id = asyncio.run(linkAnchorAccount(anchor_customer_id=anchor_customer_id, email=email))
-        
-        if user_id is None:
-            raise Exception("User not found")
-        
-        logger.info(f"Anchor account linked successfully for {email}")
+            user.anchor_user = model.AnchorUser(customerId=anchor_customer_id, depositAccountId=anchor_deposit_account_id)
+        else:
+            user.anchor_user.customerId = anchor_customer_id
+            user.anchor_user.depositAccountId = anchor_deposit_account_id
+
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        logger.info(f"Anchor account linked successfully for user_id: {user.id}")
+        # notify user about Anchor account
         return {
             'status': 'success',
-            'email': email,
-            'user_id': user_id,
+            'user_id': user.id,
             'anchor_customer_id': anchor_customer_id,
+            'anchor_deposit_account_id': anchor_deposit_account_id,
             'timestamp': datetime.utcnow().isoformat()
         }
-        
-    except Exception as exc:
-        logger.error(f"Anchor account linking failed for {email}: {str(exc)}")
-        raise self.retry(exc=exc, countdown=300, max_retries=3)
+    except Exception as e:
+        db.rollback()
+        raise Exception(f"Failed to link Anchor account for user_id: {user.id}: {str(e)}")
+    finally:
+        db.close()
 
 # Task monitoring and management
 @celery_app.task(
