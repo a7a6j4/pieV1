@@ -1,7 +1,8 @@
+from click import utils
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Query, Path, Body
 from database import db
 from sqlalchemy import select, update, delete, func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional, Annotated, Union, List
 import model
 import yfinance as yf
@@ -16,7 +17,9 @@ import os
 from dotenv import load_dotenv
 import pandas as pd
 import numpy as np  
-from ..v1 import auth
+from ..v1.auth import readUser
+from utils import tiingo
+from config import settings
 
 load_dotenv()
 
@@ -27,28 +30,34 @@ product = APIRouter(
     tags=["product"]
 )
 
-@product.get('/')
-async def getProduct(db: db, product_id: Optional[int] = None, product_class: Optional[schemas.ProductClass] = None, page: Optional[int] = None, limit: Optional[int] = None):
-  if product_id:
-    product = db.get(model.Product, product_id)
+@product.get('/', dependencies=[Depends(readUser)])
+async def getProduct(
+  db: db,
+  productId: Optional[int] = Query(default=None, description="Product ID"),
+  productClass: Optional[schemas.ProductClass] = Query(default=None),
+  page: Optional[int] = Query(default=1),
+  type: Optional[str] = Query(enum=["variable", "deposit"], default=None),
+  limit: Optional[int] = Query(default=10)):
+
+
+  if productId:
+    product = db.query(model.Product).filter(model.Product.id == productId).first()
     if not product:
       raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    if product.category == 'variable':
-      variable = db.get(model.Variable, product_id)
-      return variable
-    elif product.category == 'deposit':
-      deposit = db.get(model.Deposit, product_id)
-      return deposit
+    if product.category == "variable":
+      return db.query(model.Variable).filter(model.Variable.id == productId).first()
+    elif product.category == "deposit":
+      return db.query(model.Deposit).filter(model.Deposit.id == productId).first()
   else:
-    if product_class:
-      product = db.execute(select(model.Product).where(model.Product.product_class == product_class)).scalars().all()
-    else:
-      product = db.execute(select(model.Product)).scalars().all()
-    
+    base_query = db.query(model.Product)
+     
+    if productClass:
+      base_query = base_query.filter(model.Product.product_class == productClass)
+    if type:
+      base_query = base_query.filter(model.Product.category == type)
     if page and limit:
-      product = product[page * limit:(page + 1) * limit]
-    
-    return product
+      base_query = base_query.offset((page - 1) * limit).limit(limit)
+    return base_query.options(joinedload(model.Variable.attributes)).all()
 
 @product.post('/issuer', response_model=schemas.IssuerSchema)
 async def createIssuer(issuer_data: schemas.IssuerCreate, db: db):
@@ -70,30 +79,103 @@ async def getIssuer(issuer_id: int, db: db):
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Issuer not found")
   return issuer
 
-@product.post('/', response_model=schemas.ProductSchema)
-async def createProduct(issuer_id: int, category: Annotated[str, Query(enum=['variable', 'deposit'])], product_data: schemas.ProductCreate, db: db):
-
-  issuer = db.get(model.Issuer, issuer_id)
-  if not issuer:
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Issuer not found")
-  
-  if category == 'variable' and product_data.variable_data:
-    product_dict = product_data.model_dump()
-    variable_data = product_dict.pop("variable_data")
-    product_dict.pop("deposit_data")
-    
-    new_product = model.Variable(**product_dict, **variable_data)
-
-  elif category == 'deposit' and product_data.deposit_data:
-    product_dict = product_data.model_dump()
-    deposit_data = product_dict.pop("deposit_data")
-    product_dict.pop("variable_data")
-    
-    new_product = model.Deposit(**product_dict, **deposit_data)
+@product.get('/group')
+async def getProductGroups(db: db, groupId: Optional[int] = Query(default=None)):
+  if groupId:
+    product_group = db.get(model.ProductGroup, groupId)
+    if not product_group:
+      raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product group not found")
+    return product_group
   else:
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid product category data")
-  
+    product_groups = db.execute(select(model.ProductGroup)).scalars().all()
+  return product_groups
+
+@product.post('/fees', response_model=schemas.TransactionFeeSchema)
+async def createTransactionFee(
+  db: db,
+  feeData: schemas.TransactionFeeCreate,
+  ):
+
+  new_transaction_fee = model.TransactionFee(**feeData.model_dump())
+
+  db.add(new_transaction_fee)
+  db.commit()
+  db.refresh(new_transaction_fee)
+  return new_transaction_fee  
+
+@product.post("/group", response_model=schemas.ProductGroupSchema)
+async def createProductGroup(
+  db: db,
+  groupData: schemas.ProductGroupCreate
+):
+
+  new_product_group = model.ProductGroup(**groupData.model_dump(exclude={'feeIds'}))
+  if groupData.feeIds:
+    for fee in groupData.feeIds:
+      association = model.ProductGroupFees(TransactionFeeId=fee)
+      new_product_group.transactionFees.append(association)
+  db.add(new_product_group)
+  db.commit()
+  db.refresh(new_product_group)
+  return new_product_group
+
+@product.patch("/group")
+async def updateProductGroup(
+  db: db,
+  productGroupId: int,
+  groupData: schemas.ProductGroupUpdate,
+):
+
+  new_product_group = db.get(model.ProductGroup, productGroupId)
+  if not new_product_group:
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product group not found")
+
+  new_product_group.name = groupData.name if groupData.name is not None else new_product_group.name
+  new_product_group.description = groupData.description if groupData.description is not None else new_product_group.description
+  new_product_group.market = groupData.market if groupData.market is not None else new_product_group.market
+
+  if groupData.feeIds:
+    new_product_group.transactionFees = []
+    for fee in groupData.feeIds:
+      dbFee = db.get(model.TransactionFee, fee)
+      if not dbFee:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction fee not found")
+      association = model.ProductGroupFees()
+      association.transactionFee = dbFee
+      new_product_group.transactionFees.append(association)
+
+  db.add(new_product_group)
+  db.commit()
+  db.refresh(new_product_group)  
+  return new_product_group
+
+@product.post('/variable', response_model=schemas.ProductSchema)
+async def createProduct(
+  db: db,
+  product_data: schemas.VariableCreate,
+  issuer = Depends(getIssuer),
+):
+
+  new_product = model.Variable(**product_data.model_dump())
   new_product.issuer = issuer  
+  db.add(new_product)
+  db.commit()
+  db.refresh(new_product)
+
+  return new_product
+
+@product.post('/deposit', response_model=schemas.ProductGroupSchema)
+async def createDeposit(
+  db: db,
+  product_data: schemas.DepositCreate,
+  issuer = Depends(getIssuer),
+):
+
+  product_dict = product_data.model_dump()
+  new_product = model.Deposit(**product_dict)
+
+  new_product.issuer = issuer
+  new_product.productGroupId = product_data.productGroupId
   db.add(new_product)
   db.commit()
   db.refresh(new_product)
@@ -138,134 +220,6 @@ async def addBulkPolygon(db: db, tickers: List[BulkIn]):
     db.add(product)
   
   db.commit()
-    
-
-# @product.get('/yfinance')
-async def testEndpoint(ticker: str):
-
-  stock = yf.Ticker(ticker=ticker)
-  print(stock.info.get('quoteType'))
-  return stock.info
-
-# @product.post('/value', response_model=schemas.VariableValueSchema)
-# async def addProductValue(variable_id: int, value_data: List[schemas.VariableValueCreate], db: db):
-#   variable = db.get(Variable, variable_id)
-#   if not variable:
-#     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variable not found")
-  
-#   for value in value_data:
-#     new_value = VariableValue(value=value.value, date=value.date)
-#     variable.values.append(new_value)
-
-#   db.add(variable)
-#   db.commit()
-#   db.refresh(variable)
-#   return {
-#     "message": "Product value added successfully",
-#   }
-
-@product.post('/rate', response_model=schemas.DepositRateSchema)
-async def addProductRate(deposit_id: int, rate_data: schemas.DepositRateCreate, db: db):
-  deposit = db.get(model.Deposit, deposit_id)
-  if not deposit:
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deposit not found")
-  
-  new_rate = model.DepositRate(deposit_id=deposit.id, rate=rate_data.rate, date=rate_data.date)
-  db.add(new_rate)
-  db.commit()
-  db.refresh(new_rate)
-  return new_rate
-  
-@product.delete('/{product_id}')
-async def deleteProduct(product_id: int, db: db):
-  product = db.get(model.Product, product_id)
-  if not product:
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-  
-  product.is_active = False
-  db.add(product)
-  db.commit()
-  return {"message": "Product deleted successfully"}
-  
-
-@product.get('/benchmark')
-async def getBenchmark(db: db, benchmark_id: int):
-  index = db.get(model.Benchmark, benchmark_id)
-  if not index:
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Index not found")
-  
-  return index
-
-@product.post('/benchmark')
-async def createBenchmark(db: db, benchmark_data: list[schemas.BenchmarkCreate]):
-
-  for benchmark in benchmark_data:
-    benchmark = model.Benchmark(**benchmark.model_dump())
-    db.add(benchmark)
-  
-  db.commit()
-
-  return benchmark_data
-
-@product.post('/benchmark/history')
-async def addBenchmarkData(db: db, data: list[schemas.BenchmarkMeta], benchmark = Depends(getBenchmark)):
-
-  for data in data:
-    benchmark.history.append(model.BenchmarkHistory(date=data.date, value=data.value))
-    db.add(benchmark)
-  db.commit()
-
-  return {"message": "Benchmark data added successfully"}
-
-def historialParams(
-        max_date: Optional[datetime] = Query(default=datetime.today(), le=datetime.today()),
-        min_date: Optional[datetime] = Query(default=datetime.today(), le=datetime.today()),
-        prior: Optional[int] = Query(default=100, gt=0)
-):
-  return {
-    "max_date": max_date,
-    "min_date": min_date,
-    "prior": prior
-  }
-
-@product.get('/benchmark/history')
-async def getIndexHistorical(db: db, 
-                       params = Depends(historialParams),
-                       benchmark = Depends(getBenchmark)):
-  
-  base_query = select(model.BenchmarkHistory).where(model.BenchmarkHistory.benchmark_id == benchmark.id).order_by(model.BenchmarkHistory.date.desc())
-  
-  if params.get("max_date"):
-    base_query.where(model.BenchmarkHistory.date <= params.get("max_date"))
-
-  if params.get("min_date"):
-    base_query.where(model.BenchmarkHistory.date >= params.get("min_date"))
-
-  if params.get("prior"):
-    base_query.limit(params.get("prior"))
-
-  data = db.execute(base_query).scalars().all()
-  
-  return data
-
-@product.get('/history')
-async def getProductHistorical(db: db, 
-                               product = Depends(getProduct),
-                               params = Depends(historialParams)):
-  base_query = select(model.VariableValue).where(model.VariableValue.var_id == product.id).order_by(model.VariableValue.date.desc())
-  
-  if params.get("max_date"):
-    base_query.where(model.VariableValue.date <= params.get("max_date"))
-
-  if params.get("min_date"):
-    base_query.where(model.VariableValue.date >= params.get("min_date"))
-
-  if params.get("prior"):
-    base_query.limit(params.get("prior"))
-
-  data = db.execute(base_query).scalars().all()
-
-  return data
 
 @product.get('/variable')
 async def getVariable(db: db, variable_id: int):
@@ -424,25 +378,25 @@ async def updateProduct(db: db):
   db.commit()
   return {"message": "Products updated successfully"}
 
-@product.post('/value')
-async def addProductValue(db: db, 
-                          data: list[schemas.VariableValueCreate], 
-                          id: int,
-                          type: str = Query(enum=['INDEX', 'PRODUCT']),
-):
+# @product.post('/value')
+# async def addProductValue(db: db, 
+#                           data: list[schemas.VariableValueCreate], 
+#                           id: int,
+#                           type: str = Query(enum=['INDEX', 'PRODUCT']),
+# ):
   
-  if type == 'INDEX':
-    benchmark = await getBenchmark(db, id)
-    for value in data:
-      new_value = model.BenchmarkMeta(**value.model_dump())
-      benchmark.history.append(new_value)
-      db.add(benchmark)
-  elif type == 'PRODUCT':
-    product = await getVariable(db, id)
-    for value in data:
-      new_value = model.VariableValue(**value.model_dump())
-      product.values.append(new_value)
-      db.add(product)
+#   if type == 'INDEX':
+#     benchmark = await getBenchmark(db, id)
+#     for value in data:
+#       new_value = model.BenchmarkMeta(**value.model_dump())
+#       benchmark.history.append(new_value)
+#       db.add(benchmark)
+#   elif type == 'PRODUCT':
+#     product = await getVariable(db, id)
+#     for value in data:
+#       new_value = model.VariableValue(**value.model_dump())
+#       product.values.append(new_value)
+#       db.add(product)
 
   db.commit()
   return {"message": "Product values added successfully"}
@@ -510,11 +464,49 @@ async def test(db: db):
   # df.to_excel('output.xlsx', index=False)
   # return {"message": "Product values added successfully"}
 
+@product.get('/ngx/price')
+async def getNGXPrice(ticker: str):
+    url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={settings.VANTAGE_KEY}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        price = float(data["Global Quote"]["05. price"])
+        return price
+    else:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to get price for {ticker}: {response.text}")
 
+@product.get('/us/price')
+async def getUSPrice(ticker: str):
+    url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={settings.VANTAGE_KEY}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        price = float(data["Global Quote"]["05. price"])
+        return price
+    else:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to get price for {ticker}: {response.text}")
 
+@product.get('/mutual-fund/price')
+async def getNGMutualFundPrice():
+    mutual_fund_value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == variable.variableId).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
+    return mutual_fund_value.price
 
+@product.get('/price')
+async def getPrice(db: db, variable_id: int):
 
-  
+  variable = db.get(model.Variable, variable_id)
+  if variable is None:
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Variable {variable_id} not found")
+  if variable.productGroup.productClass == (schemas.ProductClass.EQUITY or schemas.ProductClass.ETF) and variable.productGroup.market == schemas.Country.NG:
+    return 100.00
+  elif variable.productGroup.productClass in [schemas.ProductClass.EQUITY, schemas.ProductClass.ETF] and variable.productGroup.market == schemas.Country.US:
+    return 5.00
+    # return await tiingo.tiingo.getStockPrice(variable.symbol)
+    # return await utils.vantage.getUSPrice(variable.symbol)
+  elif variable.productGroup.productClass == schemas.ProductClass.MUTUAL_FUND and variable.productGroup.market == schemas.Country.NG:
+    return await getNGMutualFundPrice()
+  else:
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Variable {variable_id} is not an equity product")
 
 
 

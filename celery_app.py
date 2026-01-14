@@ -1,10 +1,11 @@
 import asyncio
+import json
 import celery
 from utils.brevo import sendOtpEmail
-from utils.anchor import createAnchorCustomer, getAnchorCustomer, validateAnchoTier2Kyc, validateAnchorTier3Kyc, uploadAnchorCustomerDocument, createAnchorDepositAccount
+from utils.anchor import createAnchorCustomer, getAnchorCustomer, validateAnchoTier2Kyc, validateAnchorTier3Kyc, uploadAnchorCustomerDocument, createAnchorDepositAccount, anchor_api_server_error_codes, anchor_api_client_error_codes, anchor_api_success_codes
 from utils.minio import download_s3_object, download_s3_object_for_requests
 import schemas
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -13,6 +14,7 @@ import model
 from config import settings
 import logging
 import requests
+from requests.exceptions import RequestException, HTTPError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -80,13 +82,18 @@ celery_app.conf.update(
     
     # Queue routing
     task_routes={
-        'create_anchor_account_task': {'queue': 'anchor_queue'},
         'validate_kyc_task': {'queue': 'kyc_queue'},
+        'validate_kyc_tier2_task': {'queue': 'kyc_queue'},
+        'validate_kyc_tier3_task': {'queue': 'kyc_queue'},
+        'upload_kyc_file_task': {'queue': 'kyc_queue'},
+        'kyc_verification_task': {'queue': 'kyc_queue'},
         'link_anchor_account_task': {'queue': 'anchor_queue'},
         'send_otp_task': {'queue': 'otp_queue'},
-        'kyc_verification_task': {'queue': 'kyc_queue'},
         'monitor_failed_tasks': {'queue': 'monitor_queue'},
-        'create_anchor_deposit_account_task': {'queue': 'anchor_queue'},
+        'book_portfolio_deposit_task': {'queue': 'transaction_queue'},
+        'execute_NGX_transaction_task': {'queue': 'transaction_queue'},
+        'execute_alpaca_transaction_task': {'queue': 'transaction_queue'},
+        'execute_mutual_fund_transaction_task': {'queue': 'transaction_queue'},
     },
     
     # Define durable queues for persistence
@@ -118,6 +125,12 @@ celery_app.conf.update(
         'monitor_queue': {
             'exchange': 'monitor_exchange',
             'routing_key': 'monitor',
+            'durable': True,
+            'auto_delete': False,
+        },
+        'transaction_queue': {
+            'exchange': 'transaction_exchange',
+            'routing_key': 'transaction',
             'durable': True,
             'auto_delete': False,
         }
@@ -186,63 +199,15 @@ def sendOtpTask(self, otp: str, email: str, type: str):
         logger.error(f"OTP sending failed for {email}: {str(exc)}")
         raise self.retry(exc=exc, countdown=300, max_retries=3)
 
-@celery_app.task(
-    bind=True,
-    base=CallbackTask,
-    autoretry_for=(Exception,),
-    retry_kwargs={'max_retries': 3, 'countdown': 300},
-    retry_backoff=True,
-    retry_jitter=True,
-    name='create_anchor_account_task'
-)
-def createAnchorAccountTask(
-    self,
-    firstName: str,
-    lastName: str,
-    addressLine_1: str,
-    city: str,
-    state: schemas.NigeriaState,
-    postalCode: str,
-    email: str,
-    phoneNumber: str,
-    dateOfBirth: datetime,
-    gender: str,
-    bvn: str,
-    selfieImage: str,
-    idType: schemas.IDType,
-    idNumber: str,
-    idExpirationDate: datetime,
-    addressLine_2: Optional[str],
-    middleName: Optional[str],
-    maidenName: Optional[str],
-    mode: schemas.AnchorMode,
-):
-    """
-    Create Anchor account task with retry logic
-    Retries: 3 times with 5-minute intervals
-    Results stored in RabbitMQ
-    """
-    try:
-        logger.info(f"Attempting to create Anchor account for {email} (attempt {self.request.retries + 1})")
-        
-        response = asyncio.run(createAnchorCustomer(data=locals(), mode=schemas.AnchorMode(mode)))
-        
-        if response.status_code in [201, 200]:
-            logger.info(f"Anchor account created successfully for {email}")
-            return {
-            'status': 'success',
-            'email': email,
-            'anchor_response': response.json(),
-            'timestamp': datetime.utcnow().isoformat()
-            }
-        elif response.status_code == 500:
-            logger.error(f"Anchor API error: {response.status_code} - {response.text}")
-            raise self.retry(exc=Exception(f"Anchor API error: {response.status_code} - {response.text}"), countdown=300, max_retries=1)
-        else:
-            logger.error(f"Anchor account creation failed for {email}: {response.status_code} - {response.text}")
-        
-    except Exception as exc:
-        logger.error(f"Anchor account creation failed for {email}: {str(exc)}")
+def anchorAccountCreationError(userId: int, status: str, response_data: dict):
+    db = SessionLocal()
+
+    anchorAccountCreationResponse = model.AnchorAccountCreationResponse(user_id=userId, status=status, response_data=json.dumps(response_data))
+    db.add(anchorAccountCreationResponse)
+    db.commit()
+    db.refresh(anchorAccountCreationResponse)
+    db.close()
+    return "Anchor account creation response saved successfully"
 
 @celery_app.task(
     bind=True,
@@ -253,27 +218,27 @@ def createAnchorAccountTask(
     retry_jitter=True,
     name='validate_kyc_tier2_task'
 )
-def validateAnchorTier2KycTask(self, anchor_customer_id: str, mode: schemas.AnchorMode):
+def validateAnchorTier2KycTask(self, anchor_customer_id: str, mode: str):
     """
     Validate KYC task with retry logic
     Retries: 3 times with 5-minute intervals
     Results stored in RabbitMQ
     """
     logger.info(f"Attempting to validate KYC for {anchor_customer_id} (attempt {self.request.retries + 1})")
-    kyc =asyncio.run(validateAnchoTier2Kyc(anchor_customer_id=anchor_customer_id, mode=schemas.AnchorMode(mode)))
-    if kyc.get('code') in [200, 201]:
+    kyc =asyncio.run(validateAnchoTier2Kyc(anchor_customer_id=anchor_customer_id, mode=mode))
+    if kyc.status_code in anchor_api_success_codes:
         logger.info(f"KYC validated successfully for {anchor_customer_id}")
         return {
             'status': 'success',
             'anchor_customer_id': anchor_customer_id,
             'timestamp': datetime.utcnow().isoformat()
         }
-    elif kyc.get('code') == 500:
-        logger.error(f"Unable to reach Anchor API: {kyc}")
-        raise self.retry(exc=Exception(f"Unable to reach Anchor API: {kyc}"), countdown=1800, max_retries=3)
+    elif kyc.status_code in anchor_api_server_error_codes:
+        logger.error(f"Unable to reach Anchor API: {kyc.text}")
+        raise self.retry(exc=Exception(f"Unable to reach Anchor API: {kyc.text}"), countdown=1800, max_retries=3)
     else:
-        logger.error(f"KYC validation failed for {anchor_customer_id}: {kyc}")
-        raise Exception(f"KYC validation failed for {anchor_customer_id}: status code {kyc.get('code')}")
+        logger.error(f"KYC validation failed for {anchor_customer_id}: {kyc.text}")
+        raise Exception(f"KYC validation failed for {anchor_customer_id}: status code {kyc.status_code}")
 
 @celery_app.task(
     bind=True,
@@ -284,48 +249,50 @@ def validateAnchorTier2KycTask(self, anchor_customer_id: str, mode: schemas.Anch
     retry_jitter=True,
     name='validate_kyc_task'
 )
-def validateAnchorTier3KycTask(self, anchor_customer_id: str, mode: schemas.AnchorMode):
+def validateAnchorTier3KycTask(self, anchor_customer_id: str, mode: str):
     """
     Validate KYC task with retry logic
     Retries: 3 times with 5-minute intervals
     Results stored in RabbitMQ
     """
     logger.info(f"Attempting to validate KYC for {anchor_customer_id} (attempt {self.request.retries + 1})")
-    kyc =asyncio.run(validateAnchorTier3Kyc(anchor_customer_id=anchor_customer_id, mode=schemas.AnchorMode(mode)))
-    if kyc.get('code') in [200, 201]:
+    kyc =asyncio.run(validateAnchorTier3Kyc(anchor_customer_id=anchor_customer_id, mode=mode))
+    if kyc.status_code in anchor_api_success_codes:
         logger.info(f"KYC validated successfully for {anchor_customer_id}")
         return {
             'status': 'success',
             'anchor_customer_id': anchor_customer_id,
             'timestamp': datetime.utcnow().isoformat()
         }
-    elif kyc.get('code') == 500:
-        logger.error(f"Unable to reach Anchor API: {kyc.get('error')}")
-        raise self.retry(exc=Exception(f"Unable to reach Anchor API: {kyc.get('error')}"), countdown=300, max_retries=5)
+    elif kyc.status_code in anchor_api_server_error_codes:
+        logger.error(f"Unable to reach Anchor API: {kyc.text}")
+        raise self.retry(exc=Exception(f"Unable to reach Anchor API: {kyc.text}"), countdown=300, max_retries=5)
     else:
-        logger.error(f"KYC validation failed for {anchor_customer_id}: {kyc.get('error')}")
-        raise Exception(f"KYC validation failed for {anchor_customer_id}: {kyc.get('error')}")
+        logger.error(f"KYC validation failed for {anchor_customer_id}: {kyc.text}")
+        raise Exception(f"KYC validation failed for {anchor_customer_id}: {kyc.text}")
 
 @celery_app.task(
     bind=True,
     base=CallbackTask,
-    autoretry_for=(Exception,),
-    retry_kwargs={'max_retries': 3, 'countdown': 300},
-    retry_backoff=True,
-    retry_jitter=True,
     name='upload_kyc_file_task'
 )
-def uploadAnchorKycDocumentTask(self, anchor_customer_id: str, document_id: str, user_id, mode: schemas.AnchorMode):
+def uploadAnchorKycDocumentTask(self, anchor_customer_id: str, document_id: str, email: str, mode: str):
     """
     Upload KYC file task with retry logic
     Retries: 3 times with 5-minute intervals
     Results stored in RabbitMQ
     """
+
+    db = SessionLocal()
+    user = db.execute(select(model.User).where(model.User.email == email)).scalar_one_or_none()
+    if user is None:
+        raise Exception(f"User not found for email: {email}")
+
     logger.info(f"Attempting to upload KYC file for {anchor_customer_id} (attempt {self.request.retries + 1})")
-    s3_file_data = asyncio.run(download_s3_object_for_requests(bucket_name="user", object_name=f"{user_id}/kyc/{schemas.UserDocumentType.FRONT_ID.value}"))
+    s3_file_data = asyncio.run(download_s3_object_for_requests(bucket_name="user", object_name=f"{user.id}/kyc/{schemas.UserDocumentType.FRONT_ID.value}"))
     file_data = { "fileData": s3_file_data }
-    upload_request = asyncio.run(uploadAnchorCustomerDocument(anchor_customer_id=anchor_customer_id, document_id=document_id, file_data=file_data, mode=schemas.AnchorMode(mode)))
-    if upload_request.get('code') in [200, 201]:
+    upload_request = asyncio.run(uploadAnchorCustomerDocument(anchor_customer_id=anchor_customer_id, document_id=document_id, file_data=file_data, mode=mode))
+    if upload_request.status_code in anchor_api_success_codes:
         logger.info(f"KYC file uploaded successfully for {anchor_customer_id}")
         return {
         'status': 'success',
@@ -333,11 +300,11 @@ def uploadAnchorKycDocumentTask(self, anchor_customer_id: str, document_id: str,
         'document_id': document_id,
             'timestamp': datetime.utcnow().isoformat()
         }
-    elif upload_request.get('code') == 500:
-        logger.error(f"Unable to reach Anchor API: {upload_request.get('error')}")
-        raise self.retry(exc=Exception(f"Unable to reach Anchor API: {upload_request.get('error')}"), countdown=300, max_retries=5)
+    elif upload_request.status_code in anchor_api_server_error_codes:
+        logger.error(f"Unable to reach Anchor API: {upload_request.text}")
+        raise self.retry(exc=Exception(f"Unable to reach Anchor API: {upload_request.text}"), countdown=1800, max_retries=3)
     else:
-        logger.error(f"Failed to upload KYC file for {anchor_customer_id}: {upload_request.get('error')}")
+        logger.error(f"Failed to upload KYC file for {anchor_customer_id}: {upload_request.text}")
 
 @celery_app.task(
     bind=True,
@@ -514,3 +481,148 @@ def notifyTaskCompletion(task_name: str, task_id: str, status: str, result=None,
     except Exception as e:
         logger.error(f"Failed to handle task callback for {task_id}: {e}")
     return payload
+
+async def executePurchaseTransaction(transaction_id: int):
+    db = SessionLocal()
+    
+    transaction = db.execute(select(model.PortfolioTransaction).where(model.PortfolioTransaction.id == transaction_id)).scalar_one_or_none()
+    if transaction is None:
+        raise Exception(f"Transaction not found for transaction_id: {transaction_id}")
+
+    if transaction.category == "deposittransaction":
+        transaction = db.execute(select(model.DepositTransaction).where(model.DepositTransaction.id == transaction_id)).scalar_one_or_none()
+    elif transaction.category == "variabletransaction":
+        transaction = db.execute(select(model.VariableTransaction).where(model.VariableTransaction.id == transaction_id)).scalar_one_or_none()
+    else:
+        raise Exception(f"Invalid transaction category: {transaction.category} for transaction_id: {transaction_id}")
+    
+    try:
+        # create transaction journal
+        transaction_journal = transaction.journal
+
+        # credit portfolio for consideration
+        portfolio_entry = model.JournalEntry(
+            accountId=57 if transaction.product.currency == schemas.Currency.USD else 12,
+            amount=transaction.amount,
+            side=schemas.EntrySide.CREDIT,
+            description=f"{transaction.product.productGroup.productClass.value} transaction"
+        )
+
+        # debit asset holding for consideration
+        asset_holding_entry = model.JournalEntry(
+            accountId=transaction.product.productGroup.assetAccountId,
+            amount=transaction.amount,
+            side=schemas.EntrySide.DEBIT,
+            description=f"{transaction.product.productGroup.productClass.value} transaction"
+        )
+        transaction_journal.entries.append(portfolio_entry)
+        transaction_journal.entries.append(asset_holding_entry)
+
+        if transaction.category == "deposittransaction":
+            portfolio_deposit = model.PortfolioDeposit(
+            transaction=transaction,
+            effectiveDate=datetime.now(),
+            maturityDate=transaction.date + timedelta(days=transaction.tenor),
+            matured=False,
+            closed=False,
+            closedDate=None,
+            isActive=False
+        )
+            portfolio_deposit.journal = transaction_journal
+            db.add(portfolio_deposit)
+        
+        # create deposit ledger
+            deposit_ledger = model.DepositLedger(
+            portfolioDeposit=portfolio_deposit,
+            side=schemas.UserLedgerSide.IN,
+            amount=transaction.amount,
+            date=datetime.now(),
+            account=schemas.PortfolioAccount.ASSET,
+            transactionId=transaction.id,
+            portfolioId=transaction.portfolio.id,
+        )
+            db.add(deposit_ledger)
+    
+        if transaction.category == "variabletransaction":
+            variable_ledger = model.VariableLedger(
+            variableId=transaction.product.id,
+            side=schemas.UserLedgerSide.IN,
+            amount=transaction.amount,
+            account=schemas.PortfolioAccount.ASSET,
+            transactionId=transaction.id,
+            price=transaction.price,
+            units=transaction.units,
+            date=datetime.now(),
+            portfolioId=transaction.portfolio.id,
+        )
+            db.add(variable_ledger)
+
+        db.add(transaction_journal)
+        transactionDB = db.execute(select(model.PortfolioTransaction).where(model.PortfolioTransaction.id == transaction_id)).scalar_one_or_none()
+        transactionDB.status = schemas.TransactionStatus.COMPLETED
+        db.add(transactionDB)
+        db.commit()
+        return transaction
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to execute transaction for transaction_id: {transaction_id}: {str(e)}")
+    finally:
+        db.close()
+
+@celery_app.task(
+        bind=True,
+        name='book_portfolio_deposit_task',
+        base=CallbackTask,
+)
+def bookPortfolioDepositTask(self, deposit_transaction_id: int):
+    """
+    Book portfolio deposit task
+    """
+    try:
+        asyncio.run(executePurchaseTransaction(deposit_transaction_id))
+    except Exception as e:
+        logger.error(f"Failed to book portfolio deposit for deposit_transaction_id: {deposit_transaction_id}: {str(e)}")
+
+@celery_app.task(
+    bind=True,
+    name='execute_NGX_transaction_task',
+    base=CallbackTask,
+)
+def executeNGXTransactionTask(self, portfolio_transaction_id: int):
+    """
+    Execute NGX transaction task
+    """
+    try:
+        # call NGX API to execute transaction
+        asyncio.run(executePurchaseTransaction(portfolio_transaction_id))
+    except Exception as e:
+        logger.error(f"Failed to execute NGX transaction for portfolio_transaction_id: {portfolio_transaction_id}: {str(e)}")
+
+@celery_app.task(
+    bind=True,
+    name='execute_alpaca_transaction_task',
+    base=CallbackTask,
+)
+def executeAlpacaTransactionTask(self, portfolio_transaction_id: int):
+    """
+    Execute Alpaca transaction task
+    """
+    try:
+        # call alpaca API to execute transaction
+        asyncio.run(executePurchaseTransaction(portfolio_transaction_id))
+    except Exception as e:
+        logger.error(f"Failed to execute Alpaca transaction for portfolio_transaction_id: {portfolio_transaction_id}: {str(e)}")
+
+@celery_app.task(
+    bind=True,
+    name='execute_mutual_fund_transaction_task',
+    base=CallbackTask,
+)
+def executeMutualFundTransactionTask(self, portfolio_transaction_id: int):
+    """
+    Execute mutual fund transaction task
+    """
+    try:
+        asyncio.run(executePurchaseTransaction(portfolio_transaction_id))
+    except Exception as e:
+        logger.error(f"Failed to execute mutual fund transaction for portfolio_transaction_id: {portfolio_transaction_id}: {str(e)}")

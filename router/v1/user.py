@@ -14,9 +14,9 @@ from utils.minio_to_base64 import convert_minio_image_to_base64
 from utils.assesment import runAssesment
 from datetime import datetime
 from sqlalchemy import select, update, insert
-from celery_app import createAnchorAccountTask, linkAnchorAccountTask, uploadAnchorKycDocumentTask, createAnchorDepositAccountTask, validateAnchorTier2KycTask, validateAnchorTier3KycTask
+from celery_app import linkAnchorAccountTask, uploadAnchorKycDocumentTask, createAnchorDepositAccountTask, validateAnchorTier2KycTask, validateAnchorTier3KycTask
 from utils.minio import upload_file, get_file, download_s3_object_for_requests, validate_image_file
-from utils.anchor import uploadAnchorCustomerDocument
+from utils.anchor import uploadAnchorCustomerDocument, createAnchorCustomer, anchor_api_server_error_codes, anchor_api_client_error_codes
 import os
 
 user = APIRouter(
@@ -24,15 +24,13 @@ user = APIRouter(
     tags=["user"],
 )
 
-
-
-@user.post("/signup", response_model=schemas.UserSchema)
+@user.post("/signup", response_model=schemas.UserSchema, status_code=status.HTTP_201_CREATED)
 async def signup(db: db, data = Security(auth.verifyOtp, scopes=[schemas.OtpType.SIGNUP.value])):
 
     user = db.execute(select(model.User).where(model.User.email == data.get('email'), model.User.is_active == True)).scalar_one_or_none()
     if user is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists")
-    user = model.User(first_name=data.get('first_name'), last_name=data.get('last_name'), other_names=data.get('other_names'), phone_number=data.get('phone_number'), email=data.get('email'), is_active=False)
+    user = model.User(first_name=data.get('firstName'), last_name=data.get('lastName'), other_names=data.get('otherNames'), phone_number=data.get('phoneNumber'), email=data.get('email'), is_active=False)
 
 
     db.add(user)
@@ -44,7 +42,7 @@ async def signup(db: db, data = Security(auth.verifyOtp, scopes=[schemas.OtpType
 
     return user
 
-@user.post("/password", response_model=schemas.UserSchema)
+@user.post("/password", response_model=schemas.UserSchema, status_code=status.HTTP_201_CREATED)
 async def set_password(db: db, password = Body(..., embed=True), payload = Security(auth.verifyAccessToken, scopes=[schemas.AccessLimit.PASSWORD.value])):
 
     user = db.execute(select(model.User).where(model.User.email == payload.get('username'))).scalar_one_or_none()
@@ -57,19 +55,17 @@ async def set_password(db: db, password = Body(..., embed=True), payload = Secur
     user.password = auth.hashpass(password)
     user.is_active = True
 
-    #  create use wallets
-    usd_wallet = model.Wallet(currency="USD")
-    ngn_wallet = model.Wallet(currency="NGN")
-    user.wallets = [usd_wallet, ngn_wallet]
-
-    liquid = model.Portfolio(type=schemas.PortfolioType.LIQUID, duration=1, risk=1, user_id=user.id)
+    liquid = model.Portfolio(type=schemas.PortfolioType.LIQUID, duration=1, risk=1, userId=user.id)
     user.portfolios.append(liquid)
+
+    # create wallet background task
 
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
 
+# @user.get("/", response_model=schemas.UserOut)
 @user.get("/")
 async def getUser(
     db: db, 
@@ -88,7 +84,7 @@ async def getUser(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
 
-@user.get("/all", dependencies=[Depends(auth.verifyAdminAccessToken)])
+@user.get("/all")
 async def getAllUsers(db: db):
     return db.execute(select(model.User)).scalars().all()
 
@@ -102,7 +98,7 @@ async def update_user_password(password: str, db: db):
    db.commit()
    return {"message": "user password updated successfully"}
 
-@user.post("/risk")
+@user.post("/risk", status_code=status.HTTP_201_CREATED)
 async def completeRiskQuestionnaire(db: db, data: schemas.RiskProfileCreate, user: Annotated[model.User, Depends(auth.getActiveUser)]):
     
     if user.riskProfile:
@@ -111,20 +107,21 @@ async def completeRiskQuestionnaire(db: db, data: schemas.RiskProfileCreate, use
     capacity = await runAssesment(data)
 
     portfolio_types = map(lambda x: x.type, user.portfolios)
-    emergency_portfolio_exists = model.PortfolioType.EMERGENCY not in list(portfolio_types)
-    print(emergency_portfolio_exists)
+    emergency_portfolio_exists = schemas.PortfolioType.EMERGENCY not in list(portfolio_types)
 
     risk_profile = model.RiskProfile(**data.model_dump(exclude={"objective"}), objective=data.objective.name, user_id=user.id, capacity=capacity)
     
     if emergency_portfolio_exists:
 
-        portfolio = model.Portfolio(user_id=user.id, type=model.PortfolioType.EMERGENCY.name, risk=1, duration=1)
-        portfolio.target = model.Target(amount=data.monthly_income * (3 if capacity.value == model.RiskLevel.HIGH.value else 6), currency=data.primary_income_currency)
+        portfolio = model.Portfolio(userId=user.id, type=schemas.PortfolioType.EMERGENCY.name, risk=1, duration=1)
+        portfolio.target = model.PortfolioTarget(amount=data.monthly_income * (3 if capacity.value == schemas.RiskLevel.HIGH.value else 6), currency=data.primary_income_currency)
         user.tier = 2
         user.riskProfile = risk_profile
         user.portfolios = user.portfolios
         db.add(portfolio)
-    
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Emergency portfolio already exists")
+
     try:
         db.add(risk_profile)
         db.add(user)
@@ -162,28 +159,73 @@ async def updatePassword(db: db, new_password = Body(..., embed=True), token = D
         "message": "Password updated successfully"
     }
 
+@user.get("/kyc/documents")
+async def getKycDocument(db: db, user: Annotated[model.User, Depends(auth.getActiveUser)]):
+
+    selfie_image = await get_file(bucket_name="user", object_name=f"{user.id}/kyc/{schemas.UserDocumentType.SELFIE.value}")
+    front_id = await get_file(bucket_name="user", object_name=f"{user.id}/kyc/{schemas.UserDocumentType.FRONT_ID.value}")
+    back_id = await get_file(bucket_name="user", object_name=f"{user.id}/kyc/{schemas.UserDocumentType.BACK_ID.value}")
+    address_proof = await get_file(bucket_name="user", object_name=f"{user.id}/kyc/{schemas.UserDocumentType.PROOF_OF_ADDRESS.value}")
+
+    return {
+        "selfie_image": selfie_image,
+        "front_id": front_id,
+        "back_id": back_id,
+        "address_proof": address_proof
+    }
+
 @user.post("/kyc")
 async def createUserKyc(db: db, 
 data: schemas.KycCreate, user: Annotated[model.User, Security(getUser, scopes=["createUser"])]):
 
-    if user.kyc:
+    if user.kyc is not None and user.kyc.verified:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="KYC already verified")
-    kyc = model.Kyc(user_id=user.id, **data.model_dump(exclude={"maidenName", "address", "dateOfBirth", "phoneNumber"}), addresslineOne=data.address.addressLine_1, addresslineTwo=data.address.addressLine_2, city=data.address.city, state=data.address.state, postalCode=data.address.postalCode,verified=False)
-    try:
-        base64_selfie_image = convert_minio_image_to_base64(bucket_name="user", object_name=f"{user.id}/kyc/{schemas.UserDocumentType.SELFIE.value}")
+    
+    base64_selfie_image = convert_minio_image_to_base64(bucket_name="user", object_name=f"{user.id}/kyc/{schemas.UserDocumentType.SELFIE.value}")
+    address_data = schemas.Address(**data.address.model_dump())
+    kyc_data = dict(**data.model_dump(exclude={"address"}))
+        
+    # create anchor user   
+    anchor_user = schemas.AnchorAccountCreate(
+            **data.model_dump(exclude={"addressProofType", "idExpirationDate", "address"}), 
+            firstName=user.first_name, 
+            lastName=user.last_name, 
+            email=user.email,
+            phoneNumber=user.phone_number,
+            addressLineOne=data.address.addressLineOne,
+            addressLineTwo=data.address.addressLineTwo,
+            city=data.address.city,
+            state=data.address.state,
+            postalCode=data.address.postalCode,
+            expiryDate=data.idExpirationDate,
+    )
 
-        # create anchor user
-        anchor_user = schemas.AnchorKycCreate(**data.model_dump(exclude={"addressProofType"}), firstName=user.first_name, middleName=user.other_names, lastName=user.last_name, email=user.email,addressProofType=data.addressProofType, selfieImage=base64_selfie_image)
+    args = {**anchor_user.model_dump(
+        exclude={"addressLineTwo", "addressLineOne"}),
+        "addressLine_1":data.address.addressLineOne, 
+        "addressLine_2":data.address.addressLineTwo,
+        "selfieImage":base64_selfie_image,
+        "mode":schemas.AnchorMode.SANDBOX}
+    
+    create_customer_response = 200
+    # create_customer_response = await createAnchorCustomer(args=args)
+    if create_customer_response in anchor_api_server_error_codes:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=create_customer_response.get('error'))
+    elif create_customer_response in anchor_api_client_error_codes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=create_customer_response.get('error'))
+    else:
+
+        # anchor_customer_id = create_customer_response.get('data').get('id')
+        anchor_customer_id = "176091139716212-anc_ind_cst"
 
         # insert kyc to db
-        db.add(kyc)
-        db.commit()
-
-        # create anchor user
-        createAnchorAccountTask.delay(**anchor_user.model_dump(exclude={"address","addressProofType", "country", "gender", "idType", "state"}), addressLine_1=data.address.addressLine_1, addressLine_2=data.address.addressLine_2, city=data.address.city, postalCode=data.address.postalCode, selfieImage=base64_selfie_image, gender=schemas.Gender(data.gender).value, idType=data.idType.value, state=data.address.state.value)
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        address = model.UserAddress(**address_data.model_dump())
+        kyc = model.Kyc(**data.model_dump(exclude={"address"}), verified=False, address=address, userId=user.id)
+        # db.add(kyc)
+        # db.commit()
+        # db.refresh(kyc)
+        validateAnchorTier2KycTask.delay(anchor_customer_id=anchor_customer_id, mode=schemas.AnchorMode.SANDBOX.value)
+    
     return {"message": "KYC created successfully"}
 
 
@@ -226,31 +268,25 @@ async def get_user_value(db: db, user = Depends(auth.getActiveUser)):
     }
 
 # anchor account creation webhook
-@user.post("/anchor")
-async def anchorCustomerCreatedWebhook(data: dict):
-    anchor_customer_id = data.get('data').get('relationships').get('customer').get('data').get('id')
-
-    validateAnchorTier2KycTask.delay(anchor_customer_id=anchor_customer_id, mode=schemas.AnchorMode.SANDBOX)
-    return {"message": "Anchor webhook received"}
-
 @user.post("/anchor/tier2")
 async def anchorTier2Webhook(data: dict):
     anchor_customer_id = data.get('data').get('relationships').get('customer').get('data').get('id')
-    validateAnchorTier3KycTask.delay(anchor_customer_id=anchor_customer_id, mode=schemas.AnchorMode.SANDBOX)
+    validateAnchorTier3KycTask.delay(anchor_customer_id=anchor_customer_id, mode=schemas.AnchorMode.SANDBOX.value)
     return {"message": "Tier 2 KYC webhook received"}
 
 @user.post("/anchor/tier3")
 async def anchorTier3Webhook(data: dict):
     anchor_customer_id = data.get('data').get('relationships').get('customer').get('data').get('id')
     document_id = data.get('data').get('relationships').get('documents').get('data')[0].get('id')
-    uploadAnchorKycDocumentTask.delay(anchor_customer_id=anchor_customer_id, document_id=document_id, mode=schemas.AnchorMode.SANDBOX)
+    email = data.get('included')[1].get('attributes').get('email')
+    
+    uploadAnchorKycDocumentTask.delay(anchor_customer_id=anchor_customer_id, document_id=document_id, email=email, mode=schemas.AnchorMode.SANDBOX.value)
     return {"message": "Tier 3 KYC webhook received"}
 
 @user.post("/anchor/document-verification")
 async def anchorDocumentVerificationWebhook(data: dict):
     anchor_customer_id = data.get('data').get('relationships').get('customer').get('data').get('id')
-    email = data.get('included')[0].get('attributes').get('email')
-    createAnchorDepositAccountTask.delay(anchor_customer_id=anchor_customer_id, email=email, mode=schemas.AnchorMode.SANDBOX)
+    createAnchorDepositAccountTask.delay(anchor_customer_id=anchor_customer_id, mode=schemas.AnchorMode.SANDBOX.value)
     return {"message": "Document verification webhook received"}
 
 @user.post("/anchor/deposit-account")
@@ -267,12 +303,12 @@ async def uploadKycFile(
     type: schemas.UserDocumentType, 
     user: Annotated[model.User, Security(getUser, scopes=["createUser"])],
     file: UploadFile = File()):
-    
+
     # Validate the uploaded file
-    validated_file = await validate_image_file(file)
+    await validate_image_file(file)
     
     file_name = f"{user.id}/kyc/{type.value}"
-    file_path = await upload_file(bucket_name="user", file_name=file_name, file_object=validated_file.file, content_type=validated_file.content_type)
+    file_path = await upload_file(bucket_name="user", file_object=file.file, file_name=file_name, content_type=file.content_type)
     return {"message": "File uploaded successfully", "file_path": file_path}
 
 @user.get("/file")

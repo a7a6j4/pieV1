@@ -48,6 +48,26 @@ async def get_account(db: db, id: Optional[int] = None):
     accounts = db.query(model.Account).all()
     return accounts
 
+@account.get('/journal_entry')
+async def get_account_journal_entry(
+    entryId: int,
+    db: db
+):
+  entry = db.get(model.JournalEntry, entryId)
+  if not entry:
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
+  return entry
+
+@account.get('/journal')
+async def get_account_journal(
+    journalId: int,
+    db: db
+):
+  journal = db.get(model.Journal, journalId)
+  if not journal:
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal not found")
+  return journal
+
 @account.get('/entries')
 async def get_account_entries(
     account: Annotated[model.Account, Depends(get_account_by_id)], 
@@ -71,7 +91,7 @@ async def get_account_entries(
     List of ledger entries for the account
   """
   # Get all entries for this account with journal join
-  query = select(model.Entries).join(model.Journal, model.Entries.journal_id == model.Journal.id).where(model.Entries.account_id == account.id)
+  query = select(model.JournalEntry).join(model.Journal, model.JournalEntry.journal_id == model.Journal.id).where(model.JournalEntry.account_id == account.id)
   
   # Apply date filters if provided
   if start_date:

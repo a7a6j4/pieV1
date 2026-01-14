@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 import model
 from celery_app import sendOtpTask
 from config import settings
+from utils.brevo import sendOtpEmail
 # models    
 
 auth = APIRouter(prefix="/auth", tags=["auth"])
@@ -71,7 +72,6 @@ async def decodeToken(encoded_jwt):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
     except InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-
     return payload
 
 async def verifyAccessToken(security_scopes: SecurityScopes, encoded_jwt = Security(userAccessScheme)):
@@ -128,9 +128,11 @@ async def verifyOtp(scopes: SecurityScopes, otp = Body(..., embed=True), encoded
     for scope in scopes.scopes:
         if payload.get('scope', "") != scope:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Insufficient Permission", headers={"WWW-Authenticate": authenticate_value})
+
+    print(payload)
     return payload
 
-@auth.post("/", response_model=schemas.SigninTokenResponse)
+@auth.post("", response_model=schemas.SigninTokenResponse)
 async def accessToken(
     db: db, 
     credential: Annotated[HTTPBasicCredentials, Depends(security)],
@@ -162,7 +164,9 @@ async def sendOtp(data: dict, type: schemas.OtpType):
 
     single_digits = [str(randint(0, 9)) for _ in range(5)]  # Convert to strings
     otp = ''.join(single_digits)
-    email_response = sendOtpTask.delay(otp, data.get('email'), type.value)
+    email_response = await sendOtpEmail(otp=otp, email=data.get('email'), otpType=type)
+    if email_response not in [200, 201]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to send OTP")
     seconds = schemas.opr.get(type.value).get("seconds")
     expires = timedelta(seconds=int(seconds))
     payload = {"otp": otp, **data, "scope": type.value}
@@ -187,10 +191,14 @@ async def checkUserEmail(db: db, email = Body(..., embed=True)):
 async def signupotp(userData: schemas.SignupCreate, db: db):
     user = db.execute(select(User).where(User.email == userData.email)).scalar_one_or_none()
 
-    if user is None:
-        return await sendOtp(data=userData.model_dump(), type=schemas.OtpType.SIGNUP)
-    else:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already exists and is active")
+    if user is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    phone_number = db.execute(select(User).where(User.phone_number == userData.phoneNumber)).scalar_one_or_none()
+    if phone_number is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone number already registered")
+    
+    return await sendOtp(data=userData.model_dump(), type=schemas.OtpType.SIGNUP)
 
 @auth.post("/reset-password", response_model=schemas.TokenResponse)
 async def resetPassword(db: db, email = Body(..., embed=True)):

@@ -51,7 +51,7 @@ def download_s3_object(bucket_name: str, object_name: str):
     except S3Error as e:
         raise Exception(f"Error downloading S3 object: {e}")
 
-def download_s3_object_for_requests(bucket_name: str, object_name: str, content_type: str = "application/octet-stream"):
+async def download_s3_object_for_requests(bucket_name: str, object_name: str, content_type: str = "application/octet-stream"):
     """
     Download an S3 object and return it formatted for requests files parameter
     
@@ -75,8 +75,8 @@ def download_s3_object_for_requests(bucket_name: str, object_name: str, content_
         raise Exception(f"Error downloading S3 object: {e}")
 
 # File validation constants
-ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/jpg"]
-ALLOWED_EXTENSIONS = [".jpg", ".jpeg"]
+ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+ALLOWED_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp"]
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 async def validate_image_file(file: UploadFile) -> None:
@@ -106,7 +106,7 @@ async def validate_image_file(file: UploadFile) -> None:
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type. Only JPEG/JPG images are allowed"
+            detail=f"Invalid file type. Only {', '.join(ALLOWED_IMAGE_TYPES)} images are allowed"
         )
     
     # Validate file content using magic numbers
@@ -115,12 +115,26 @@ async def validate_image_file(file: UploadFile) -> None:
         file_content = file.file.read(1024)  # Read first 1KB for magic number detection
         file.file.seek(0)  # Reset to beginning
         
-        # Check for JPEG magic numbers
-        if not (file_content.startswith(b'\xff\xd8\xff') or 
-                file_content.startswith(b'\xff\xd8')):
+        # Check for image magic numbers based on file type
+        is_valid_image = False
+        
+        if file.content_type in ["image/jpeg", "image/jpg"]:
+            # JPEG magic numbers: FF D8 FF or FF D8
+            is_valid_image = (file_content.startswith(b'\xff\xd8\xff') or 
+                            file_content.startswith(b'\xff\xd8'))
+        elif file.content_type == "image/png":
+            # PNG magic number: 89 50 4E 47 0D 0A 1A 0A
+            is_valid_image = file_content.startswith(b'\x89PNG\r\n\x1a\n')
+        elif file.content_type == "image/webp":
+            # WebP magic number: 52 49 46 46 (RIFF) followed by 57 45 42 50 (WEBP)
+            is_valid_image = (file_content.startswith(b'RIFF') and 
+                            len(file_content) >= 12 and 
+                            file_content[8:12] == b'WEBP')
+        
+        if not is_valid_image:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid file content. File does not appear to be a valid JPEG image"
+                detail=f"Invalid file content. File does not appear to be a valid {file.content_type} image"
             )
             
     except Exception as e:

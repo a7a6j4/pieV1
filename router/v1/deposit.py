@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, case
 from database import db
-from model import UserDeposit, Deposit, DepositRate, Product
+from model import Deposit, PortfolioDeposit, Product, PortfolioTransaction, DepositTransaction
 from typing import Annotated, Union, Optional, List
 from datetime import datetime
 from ..v1 import auth
@@ -19,7 +19,7 @@ async def getDeposit(
         deposit_id: int,
         db: db
 ):
-    deposit = db.get(UserDeposit, deposit_id)
+    deposit = db.get(PortfolioDeposit, deposit_id)
     if not deposit:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -39,7 +39,7 @@ async def getDepositValue(
 @deposit.get("/liquidation_value")
 async def getLiquidationValue(
     db: db,
-    deposit: UserDeposit = Depends(getDeposit)
+    deposit: PortfolioDeposit = Depends(getDeposit)
 ):
     days_passed = (datetime.now() - deposit.start_date).days
     days_left = deposit.tenor - days_passed

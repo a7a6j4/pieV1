@@ -1,5 +1,6 @@
 from typing import List, Optional, Annotated
 from datetime import datetime
+import uuid
 from sqlalchemy import (
     create_engine,
     Column,
@@ -34,7 +35,6 @@ class Base(DeclarativeBase):
 
     )
 
-
 class AdminUser(Base):
     __tablename__ = "adminuser"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -43,9 +43,9 @@ class AdminUser(Base):
     last_name: Mapped[str]
     phone_number: Mapped[Optional[str]] = mapped_column(unique=True)
     password: Mapped[Optional[str]]
-    group: Mapped[schemas.AdminGroup]
     role: Mapped[schemas.AdminRole]
     createdBy: Mapped[Optional[int]] = mapped_column(ForeignKey("adminuser.id"))
+    group: Mapped[schemas.AdminGroup]
     is_active: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -62,54 +62,46 @@ class User(Base):
     first_name: Mapped[str]
     other_names: Mapped[Optional[str]]
     last_name: Mapped[str]
-    phone_number: Mapped[Optional[str]] = mapped_column(unique=True)
+    phone_number: Mapped[str] = mapped_column(unique=True)
     tier: Mapped[Optional[int]] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
     )
 
-    wallets: Mapped[List["Wallet"]] = relationship(back_populates="user")
+    wallets: Mapped[List["Wallet"]] = relationship(back_populates="user", lazy='selectin')
     portfolios: Mapped[List["Portfolio"]] = relationship(back_populates="user", lazy='selectin')
     riskProfile: Mapped[Optional["RiskProfile"]] = relationship(back_populates="user", lazy='selectin')
     kyc: Mapped[Optional["Kyc"]] = relationship(back_populates="user", lazy='selectin')
     anchor_user: Mapped[Optional["AnchorUser"]] = relationship(back_populates="user", lazy='selectin')
-    user_address: Mapped[Optional["UserAddress"]] = relationship(back_populates="user")
 
 class UserAddress(Base):
     __tablename__ = "useraddress"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    house_number: Mapped[Optional[str]]
-    address_line_1: Mapped[str]
-    address_line_2: Mapped[Optional[str]]
+    kycId: Mapped[int] = mapped_column(ForeignKey("kyc.id"))
+    houseNumber: Mapped[Optional[str]]
+    addressLineOne: Mapped[str]
+    addressLineTwo: Mapped[Optional[str]]
+    city: Mapped[str]
     lga: Mapped[Optional[str]]
-    state: Mapped[str]
-    country: Mapped[str]
-    postal_code: Mapped[Optional[str]]
+    state: Mapped[schemas.NigeriaState]
+    country: Mapped[schemas.Country]
+    postalCode: Mapped[Optional[str]]
 
-    user: Mapped["User"] = relationship(back_populates="user_address")
-
+    kyc: Mapped[Optional["Kyc"]] = relationship(back_populates="address")
 
 class Kyc(Base):
     __tablename__ = "kyc"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    bvn: Mapped[str]
-    idType: Mapped[schemas.IDType]
+    userId: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    dateOfBirth: Mapped[datetime]
+    maidenName: Mapped[str]
     gender: Mapped[schemas.Gender]
+    bvn: Mapped[str] = mapped_column(unique=True)
+    idType: Mapped[schemas.IDType]
     idNumber: Mapped[str]
-    idFrontImage: Mapped[Optional[str]]
-    idBackImage: Mapped[Optional[str]]
     idExpirationDate: Mapped[datetime]
-    selfieImage: Mapped[Optional[str]]
-    addresslineOne: Mapped[str]
-    addresslineTwo: Mapped[Optional[str]]
-    city: Mapped[str]
-    state: Mapped[schemas.NigeriaState]
-    postalCode: Mapped[str]
     addressProofType: Mapped[schemas.AddressProofType]
-    addressProofImage: Mapped[Optional[str]]
     taxId: Mapped[Optional[str]]
     verified: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -117,7 +109,12 @@ class Kyc(Base):
         server_default=func.now(), onupdate=func.now()
     )
 
-    user: Mapped["User"] = relationship(back_populates="kyc")
+    user: Mapped["User"] = relationship()
+    address: Mapped["UserAddress"] = relationship(back_populates="kyc")
+
+    __table_args__ = (UniqueConstraint("userId", "bvn"), 
+    UniqueConstraint("idType", "idNumber"), 
+    UniqueConstraint("userId", "taxId"), )
 
 class AnchorUser(Base):
     __tablename__ = "anchoruser"
@@ -159,28 +156,6 @@ class RiskProfile(Base):
 
     user: Mapped["User"] = relationship(back_populates="riskProfile")
 
-class UserBankAccount(Base):
-    __tablename__ = "userbankaccount"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    bank_id: Mapped[int] = mapped_column(ForeignKey("bank.id"))
-    nuban: Mapped[str]
-
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now()
-    )
-
-class Bank(Base):
-    __tablename__ = "bank"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str]
-    code: Mapped[str]
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now()
-    )
-
 class Issuer(Base):
     __tablename__ = "issuer"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -193,337 +168,344 @@ class Issuer(Base):
 
     products: Mapped[List["Product"]] = relationship(back_populates="issuer")
 
-class Product(Base):
-    __tablename__ = "product"
+class ProductGroupFees(Base):
+    __tablename__ = "productgroupfees"
     id: Mapped[int] = mapped_column(primary_key=True)
-    issuer_id: Mapped[int] = mapped_column(ForeignKey("issuer.id"))
-    title: Mapped[str] = mapped_column(index=True, unique=True)
-    description: Mapped[Optional[str]]
-    risk_level: Mapped[int]
-    horizon: Mapped[int]
-    img: Mapped[Optional[str]]
-    currency: Mapped[schemas.Currency]
-    category: Mapped[str]
-    product_class: Mapped[Optional[schemas.ProductClass]] = mapped_column()
-    is_active: Mapped[bool] = mapped_column(default=True)
+    productGroupId: Mapped[int] = mapped_column(ForeignKey("productgroup.id"))
+    TransactionFeeId: Mapped[int] = mapped_column(ForeignKey("transactionfee.id"))
+
+    __table_args__ = (UniqueConstraint("productGroupId", "TransactionFeeId"),)
+
+    productGroup: Mapped["ProductGroup"] = relationship(back_populates="transactionFees")
+    transactionFee: Mapped["TransactionFee"] = relationship(back_populates="productGroups", lazy='selectin')   
+
+class ProductGroup(Base):
+    __tablename__ = "productgroup"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(unique=True)
+    description: Mapped[Optional[str]] 
+    market: Mapped[schemas.Country]
+    productClass: Mapped[schemas.ProductClass]
+    assetAccountId: Mapped[int] = mapped_column(ForeignKey("account.id"))
+    receivableAccountId: Mapped[int] = mapped_column(ForeignKey("account.id"))
+    payableAccountId: Mapped[int] = mapped_column(ForeignKey("account.id"))
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
     )
 
+    products: Mapped[List["Product"]] = relationship(back_populates="productGroup")
+    transactionFees: Mapped[List["ProductGroupFees"]] = relationship(back_populates="productGroup", lazy='selectin')
+
+class TransactionFee(Base):
+    __tablename__ = "transactionfee"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(unique=True)
+    description: Mapped[Optional[str]]
+    sale: Mapped[bool] = mapped_column(default=False)
+    purchase: Mapped[bool] = mapped_column(default=False)
+    vat: Mapped[bool] = mapped_column(default=True)
+    fee: Mapped[float] # in money value (100 = 1 currency unit) if flat, in basis points (100 = 1%) if relative
+    feeType: Mapped[schemas.FeeType]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+
+    productGroups: Mapped[List["ProductGroupFees"]] = relationship(back_populates="transactionFee")
+
+class Product(Base):
+    __tablename__ = "product"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    issuerId: Mapped[int] = mapped_column(ForeignKey("issuer.id"))
+    title: Mapped[str] = mapped_column(index=True, unique=True)
+    description: Mapped[Optional[str]]
+    productGroupId: Mapped[int] = mapped_column(ForeignKey("productgroup.id"))
+    productGroup: Mapped["ProductGroup"] = relationship(back_populates="products", lazy='selectin')
+    riskLevel: Mapped[int]
+    horizon: Mapped[int]
+    img: Mapped[Optional[str]]
+    currency: Mapped[schemas.Currency]
+    category: Mapped[str]
+    isActive: Mapped[bool] = mapped_column(default=False)
+    created: Mapped[datetime] = mapped_column(server_default=func.now())
+    lastModified: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+
     issuer: Mapped["Issuer"] = relationship(back_populates="products", lazy='selectin')
-    allocation: Mapped[List["ProductAllocation"]] = relationship(back_populates="product")
 
     __mapper_args__ = {
         "polymorphic_identity": "product",
         "polymorphic_on": "category",
     }
 
-class ProductAllocation(Base):
-    __tablename__ = "productallocation"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("product.id"))
-    asset_class: Mapped[schemas.AssetClass]
-    allocation: Mapped[float]
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now()
-    )
-
-    product: Mapped["Product"] = relationship()
-
-class DataSource(enum.Enum):
-
-    API="API"
-    LOCAL="LOCAL"
-
-class Benchmark(Base):
-
-    __tablename__ = "benchmark"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    symbol: Mapped[str] = mapped_column(unique=True)
-    name: Mapped[str] = mapped_column(unique=True)
-    description: Mapped[Optional[str]]
-    source: Mapped[DataSource]
-    currency: Mapped[schemas.Currency]
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now()
-    )
-
-    history: Mapped[List["BenchmarkHistory"]] = relationship(back_populates="benchmark")
-
-class BenchmarkHistory(Base):
-
-    __tablename__ = "benchmarkhistory"
-    __table_args__ = (UniqueConstraint("benchmark_id", "date"),)
-    
-    id: Mapped[int] = mapped_column(primary_key=True)
-    benchmark_id: Mapped[int] = mapped_column(ForeignKey("benchmark.id"))
-    value: Mapped[float]
-    date: Mapped[datetime] = mapped_column()
-
-    benchmark: Mapped["Benchmark"] = relationship(back_populates="history")
-
 class Variable(Product):
     __tablename__ = "variable"
     id: Mapped[int] = mapped_column(ForeignKey("product.id"), primary_key=True)
     symbol: Mapped[str] = mapped_column(unique=True)
-    benchmark_id: Mapped[Optional[int]] = mapped_column(ForeignKey("benchmark.id"))
-    values: Mapped[List["VariableValue"]] = relationship()
-
-    benchmark: Mapped[Optional["Benchmark"]] = relationship(lazy='selectin')
-    character: Mapped[Optional["VariableCharacter"]] = relationship(back_populates="variable", lazy='selectin')
-
+    productClass: Mapped[schemas.VariableType] = mapped_column()
+    
+    attributes: Mapped["VariableAttributes"] = relationship(back_populates="variable")
+    values: Mapped[List["VariableValue"]] = relationship(back_populates="variable")
     __mapper_args__ = {
         "polymorphic_identity": "variable",
     }
 
-class ProductValue(Base):
-    __tablename__ = "productvalue"
-
+class VariableAttributes(Base):
+    __tablename__ = "variableattributes"
     id: Mapped[int] = mapped_column(primary_key=True)
-    type: Mapped[str]
+    variableId: Mapped[int] = mapped_column(ForeignKey("variable.id"))
+    unitsOutstanding: Mapped[Optional[int]]
 
-    __mapper_args__ = {
-        "polymorphic_identity": "productvalue",
-        "polymorphic_on": "type",
-    }
-
-class VariableValue(ProductValue):
-    __tablename__ = "variablevalue"
-    __mapper_args__ = {
-        "polymorphic_identity": "variablevalue",
-    }
-    __table_args__ = (UniqueConstraint("var_id", "date"),)
-
-    id: Mapped[int] = mapped_column(ForeignKey("productvalue.id"), primary_key=True)
-    var_id: Mapped[int] = mapped_column(ForeignKey("variable.id"))
-    date: Mapped[datetime] = mapped_column(server_default=func.now())
-    value: Mapped[money]
-    last_update: Mapped[datetime] = mapped_column(server_default=func.now())
-
-    variable: Mapped[Optional["Variable"]] = relationship(back_populates="values")
-
-class VariableCharacter(Base):
-    __tablename__ = "variablecharacter"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    variable_id: Mapped[int] = mapped_column(ForeignKey("variable.id"), unique=True)
-    std_dev: Mapped[float]
-    variance: Mapped[float]
-    beta: Mapped[float]
-    float: Mapped[Optional[float]]
-    avgDailyTurnover: Mapped[Optional[float]]
-
-    last_update: Mapped[datetime] = mapped_column(server_default=func.now())
-    variable: Mapped[Optional["Variable"]] = relationship()
+    variable: Mapped["Variable"] = relationship(back_populates="attributes")
 
 class Deposit(Product):
     __tablename__ = "deposit"
 
     id: Mapped[int] = mapped_column(ForeignKey("product.id"), primary_key=True)
-    min_tenor: Mapped[int]
-    max_tenor: Mapped[int]
-    interest_pay: Mapped[str]
+    minTenor: Mapped[int]
+    maxTenor: Mapped[int]
+    interestPay: Mapped[schemas.InterestPay]
     fixed: Mapped[bool] = mapped_column(default=True)
-    penalty: Mapped[Optional[rate]]
-    tax: Mapped[bool] = mapped_column(default=True)
-
-    rates: Mapped[List["DepositRate"]] = relationship(back_populates="deposit")
+    rate: Mapped[int] # in basis points
+    penalty: Mapped[Optional[int]] = mapped_column(default=0) # in basis points
+    withholdingTax: Mapped[int] = mapped_column(default=100) # in basis points
 
     __mapper_args__ = {
         "polymorphic_identity": "deposit",
     }
 
-class DepositRate(ProductValue):
-    __tablename__ = "depositrate"
-    __mapper_args__ = {
-        "polymorphic_identity": "depositrate",
-    }
-    __table_args__ = (UniqueConstraint("deposit_id", "date"),)
-
-    id: Mapped[int] = mapped_column(ForeignKey("productvalue.id"), primary_key=True)
-    deposit_id: Mapped[int] = mapped_column(ForeignKey("deposit.id"))
-    date: Mapped[datetime] = mapped_column(server_default=func.now())
-    rate: Mapped[rate]
-
-    deposit: Mapped["Deposit"] = relationship(back_populates="rates")
-
-class VariableHolding(Base):
-    __tablename__ = "variableholding"
+class VariableValue(Base):
+    __tablename__ = "variablevalue"
     id: Mapped[int] = mapped_column(primary_key=True)
-    units: Mapped[money]
-    price: Mapped[money]
-    transaction_id: Mapped[int] = mapped_column(ForeignKey("portfoliotransaction.id"))
-    date: Mapped[datetime] = mapped_column(server_default=func.now())
-    
-    transaction: Mapped[Optional["PortfolioTransaction"]] = relationship(lazy='selectin')
+    variableId: Mapped[int] = mapped_column(ForeignKey("variable.id"))
+    price: Mapped[int]
+    yieldRate: Mapped[int]
+    date: Mapped[datetime]
 
-class UserDeposit(Base):
-    __tablename__ = "userdeposit"
+    variable: Mapped["Variable"] = relationship(back_populates="values")
+
+    __table_args__ = (UniqueConstraint("variableId", "date"),)
+
+class Portfolio(Base):
+    __tablename__ = "portfolio"
     id: Mapped[int] = mapped_column(primary_key=True)
-    transaction_id: Mapped[int] = mapped_column(ForeignKey("portfoliotransaction.id"))
-    amount: Mapped[money]
-    tenor: Mapped[int]
-    rate: Mapped[rate]
-    start_date: Mapped[datetime]
-    maturity_date: Mapped[datetime]
+    userId: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    active: Mapped[bool] = mapped_column(default=True)
+    type: Mapped[schemas.PortfolioType] = mapped_column(default=schemas.PortfolioType.LIQUID)
+    risk: Mapped[int] = mapped_column(default=1)
+    duration: Mapped[Optional[int]]
+    created: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+    description: Mapped[Optional[str]]
+    deleted: Mapped[bool] = mapped_column(default=False)
+    user: Mapped["User"] = relationship(back_populates="portfolios")
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="portfolios")
+    transactions: Mapped[List["PortfolioTransaction"]] = relationship(back_populates="portfolio", lazy='selectin')
+    target: Mapped[Optional["PortfolioTarget"]] = relationship(back_populates="portfolio")
+    # target: Mapped[Optional["Target"]] = relationship(back_populates="portfolio")
+    # contribution_plan: Mapped[Optional["ContributionPlan"]] = relationship(back_populates="portfolio")
+
+class PortfolioTarget(Base):
+    __tablename__ = "portfoliotarget"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
+    amount: Mapped[int]
+    currency: Mapped[schemas.Currency]
+    created: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    portfolio: Mapped["Portfolio"] = relationship(back_populates="target")
+
+class PortfolioDeposit(Base):
+    __tablename__ = "portfoliodeposit"
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    transactionId: Mapped[int] = mapped_column(ForeignKey("deposittransaction.id"))
+    transaction: Mapped["DepositTransaction"] = relationship(lazy='selectin')
+    effectiveDate: Mapped[datetime]
+    maturityDate: Mapped[datetime]
     matured: Mapped[bool] = mapped_column(default=False)
-    closed_on: Mapped[Optional[datetime]]
     closed: Mapped[bool] = mapped_column(default=False)
-    is_active: Mapped[bool] = mapped_column(default=True)
+    closedDate: Mapped[Optional[datetime]]
+    isActive: Mapped[bool] = mapped_column(default=False)
+    journalId: Mapped[int] = mapped_column(ForeignKey("journal.id"))
+    journal: Mapped["Journal"] = relationship(lazy='selectin')
 
-    transaction: Mapped[Optional["PortfolioTransaction"]] = relationship()
+    __table_args__ = (UniqueConstraint("transactionId", "effectiveDate", "maturityDate"),)
 
+class PortfolioLedger(Base):
+    __tablename__ = "portfolioledger"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
+    transactionId: Mapped[Optional[int]] = mapped_column(ForeignKey("portfoliotransaction.id"))
+    transaction: Mapped[Optional["PortfolioTransaction"]] = relationship(lazy='selectin')
+    side: Mapped[schemas.UserLedgerSide]
+    amount: Mapped[int]
+    date: Mapped[datetime]
+    account: Mapped[schemas.PortfolioAccount]
+
+    type: Mapped[str]
+
+    __mapper_args__ = {
+        "polymorphic_identity": "portfolioledger",
+        "polymorphic_on": "type",
+    }
+
+class DepositLedger(PortfolioLedger):
+    __tablename__ = "depositledger"
+    id: Mapped[int] = mapped_column(ForeignKey("portfolioledger.id"), primary_key=True)
+    portfolioDepositId: Mapped[int] = mapped_column(ForeignKey("portfoliodeposit.id"))
+    portfolioDeposit: Mapped["PortfolioDeposit"] = relationship(lazy='selectin')
+
+    __mapper_args__ = {
+        "polymorphic_identity": "depositledger",
+    }
+
+class VariableLedger(PortfolioLedger):
+    __tablename__ = "variableledger"
+    id: Mapped[int] = mapped_column(ForeignKey("portfolioledger.id"), primary_key=True)
+    variableId: Mapped[int] = mapped_column(ForeignKey("variable.id"))
+    variable: Mapped["Variable"] = relationship(lazy='selectin')
+    price: Mapped[int]
+    units: Mapped[int]
+
+    __mapper_args__ = {
+        "polymorphic_identity": "variableledger",
+    }
+
+# Association table for many-to-many relationship between PortfolioTransaction and WalletTransaction
+class PortfolioWalletTransactionAssociation(Base):
+    __tablename__ = 'portfolio_wallet_transaction_association'
+    
+    portfolioTransactionId: Mapped[int] = mapped_column(ForeignKey('portfoliotransaction.id'), primary_key=True)
+    walletTransactionId: Mapped[int] = mapped_column(ForeignKey('wallettransaction.id'), primary_key=True)
+    createdAt: Mapped[datetime] = mapped_column(server_default=func.now())
+    updatedAt: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    portfolio_transaction: Mapped["PortfolioTransaction"] = relationship(back_populates="wallet_transaction_associations")
+    wallet_transaction: Mapped["WalletTransaction"] = relationship(back_populates="portfolio_transaction_associations")
+
+class TransactionBatch(Base):
+    __tablename__ = "transactionbatch"
+    id: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4(), primary_key=True)
+    createdAt: Mapped[datetime] = mapped_column(server_default=func.now())
+    executed: Mapped[Optional[bool]] = mapped_column(default=False)
+    executedAt: Mapped[Optional[datetime]] = mapped_column(server_default=func.now())
+
+    portfolio_transactions: Mapped[List["PortfolioTransaction"]] = relationship(back_populates="batch", lazy='selectin')
+
+class PortfolioTransaction(Base):
+    __tablename__ = "portfoliotransaction"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
+    type: Mapped[schemas.TransactionType]
+    amount: Mapped[int]
+    date: Mapped[datetime] = mapped_column(server_default=func.now())
+    status: Mapped[schemas.TransactionStatus]
+    productId: Mapped[int] = mapped_column(ForeignKey("product.id"))
+    product: Mapped["Product"] = relationship(lazy='selectin')
+    portfolio: Mapped["Portfolio"] = relationship(back_populates="transactions")
+    batchId: Mapped[uuid.UUID] = mapped_column(ForeignKey("transactionbatch.id"))
+    batch: Mapped["TransactionBatch"] = relationship(back_populates="portfolio_transactions")
+    category: Mapped[str]
+    settlement: Mapped[schemas.TransactionStatus]
+    
+    # Many-to-many relationship with WalletTransaction through association table
+    wallet_transaction_associations: Mapped[List["PortfolioWalletTransactionAssociation"]] = relationship(
+        back_populates="portfolio_transaction"
+    )
+    
+    # Convenience property to access wallet transactions directly
+    @property
+    def wallet_transactions(self) -> List["WalletTransaction"]:
+        return [assoc.wallet_transaction for assoc in self.wallet_transaction_associations]
+
+    __mapper_args__ = {
+        "polymorphic_identity": "portfoliotransaction",
+        "polymorphic_on": "category",
+    }
+
+class DepositTransaction(PortfolioTransaction):
+    __tablename__ = "deposittransaction"
+    id: Mapped[int] = mapped_column(ForeignKey("portfoliotransaction.id"), primary_key=True)
+    rate: Mapped[Optional[int]] # in basis points (100 = 1%)
+    tenor: Mapped[Optional[int]]
+
+    __mapper_args__ = {
+        "polymorphic_identity": "deposittransaction",
+    }
+
+class VariableTransaction(PortfolioTransaction):
+    __tablename__ = "variabletransaction"
+    id: Mapped[int] = mapped_column(ForeignKey("portfoliotransaction.id"), primary_key=True)
+    units: Mapped[int] # in units
+    price: Mapped[int] # in basis points (100 = 1%)
+
+    __mapper_args__ = {
+        "polymorphic_identity": "variabletransaction",
+    }
+
+class WalletGroup(Base):
+    __tablename__ = "walletgroup"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(unique=True)
+    description: Mapped[Optional[str]]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
     )
-
-class Transaction(Base):
-    __tablename__ = "transaction"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    category: Mapped[str]  # e.g., "deposit", "withdrawal"
-    amount: Mapped[money]
-    status: Mapped[schemas.TrasnsactionStatus]
     currency: Mapped[schemas.Currency]
-    journal_id: Mapped[int] = mapped_column(ForeignKey("journal.id"))
-    date: Mapped[datetime] = mapped_column(server_default=func.now())
-    type: Mapped[schemas.TransactionType]  # e.g., "deposit", "withdrawal"
-    
-    journal: Mapped[Optional["Journal"]] = relationship()
-
-    __mapper_args__ = {
-        "polymorphic_identity": "transaction",
-        "polymorphic_on": "category",
-    }
-
-class WalletTransaction(Transaction):
-    __tablename__ = "wallettransaction"
-    id: Mapped[int] = mapped_column(ForeignKey("transaction.id"), primary_key=True)
-    wallet_id: Mapped[int] = mapped_column(ForeignKey("wallet.id"))
-
-    wallet: Mapped["Wallet"] = relationship(back_populates="transactions")
-
-    __mapper_args__ = {
-        "polymorphic_identity": "wallettransaction",
-    }
-        
-class PortfolioTransaction(Transaction):
-    __tablename__ = "portfoliotransaction"
-
-    id: Mapped[int] = mapped_column(ForeignKey("transaction.id"), primary_key=True)
-    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
-
-    portfolio: Mapped["Portfolio"] = relationship()
-    product_id: Mapped[int] = mapped_column(ForeignKey("product.id"))
-    product: Mapped[Optional["Product"]] = relationship(lazy='selectin')
-
-    __mapper_args__ = {
-        "polymorphic_identity": "portfoliotransaction",
-    }
+    receivableAccountId: Mapped[int] = mapped_column(ForeignKey("account.id"))
+    holdingAccountId: Mapped[int] = mapped_column(ForeignKey('account.id'))
+    wallets: Mapped[List["Wallet"]] = relationship(back_populates="walletGroup")
 
 class Wallet(Base):
     __tablename__ = "wallet"
-    __table_args__ = (UniqueConstraint("currency", "user_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    userId: Mapped[int] = mapped_column(ForeignKey("user.id"))
     active: Mapped[bool] = mapped_column(default=True)
+    walletGroupId: Mapped[int] = mapped_column(ForeignKey("walletgroup.id"))
+    walletGroup: Mapped["WalletGroup"] = relationship(lazy='selectin')
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
     )
     user: Mapped["User"] = relationship(back_populates="wallets")
-    currency: Mapped[schemas.Currency]
-    transactions: Mapped[List["WalletTransaction"]] = relationship(back_populates="wallet", lazy='selectin')
+    transactions: Mapped[List["WalletTransaction"]] = relationship(back_populates="wallet")
 
-
-class Portfolio(Base):
-    __tablename__ = "portfolio"
+class WalletTransaction(Base):
+    __tablename__ = "wallettransaction"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    active: Mapped[bool] = mapped_column(default=True)
-    type: Mapped[schemas.PortfolioType] = mapped_column(default=schemas.PortfolioType.LIQUID)
-    risk: Mapped[int] = mapped_column(default=1)
-    duration: Mapped[Optional[int]]
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    description: Mapped[Optional[str]]
-    deleted_at: Mapped[Optional[datetime]]
-
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), onupdate=func.now()
+    walletId: Mapped[int] = mapped_column(ForeignKey("wallet.id"))
+    wallet: Mapped["Wallet"] = relationship(back_populates="transactions")
+    settled: Mapped[bool] = mapped_column(default=False)
+    settledAt: Mapped[Optional[datetime]]
+    type: Mapped[schemas.TransactionType]
+    amount: Mapped[int]
+    date: Mapped[datetime] = mapped_column(server_default=func.now())
+    status: Mapped[schemas.TransactionStatus]
+    journalId: Mapped[int] = mapped_column(ForeignKey("journal.id"))
+    journal: Mapped["Journal"] = relationship(lazy='selectin')
+    
+    # Many-to-many relationship with PortfolioTransaction through association table
+    portfolio_transaction_associations: Mapped[List["PortfolioWalletTransactionAssociation"]] = relationship(
+        back_populates="wallet_transaction"
     )
-    user: Mapped["User"] = relationship(back_populates="portfolios")
-
-    # Relationships
-    user: Mapped["User"] = relationship(back_populates="portfolios")
-    # target: Mapped[Optional["Target"]] = relationship(back_populates="portfolio")
-    # contribution_plan: Mapped[Optional["ContributionPlan"]] = relationship(back_populates="portfolio")
-
-class PortfolioValue(Base):
-    __tablename__ = "portfoliovalue"
-    id: Mapped[int] = mapped_column(primary_key=True)
-    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
-    usdValue: Mapped[Decimal]
-    ngnValue: Mapped[Decimal]
-    totalUsd: Mapped[Decimal]
-    totalNgn: Mapped[Decimal]
-    date: Mapped[datetime] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-
-    __table_args__ = (UniqueConstraint("portfolio_id", "date"),)
-
-class Target(Base):
-    __tablename__ = "target"
     
-    id: Mapped[int] = mapped_column(primary_key=True)
-    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolio.id"), unique=True)
-    amount: Mapped[Decimal]
-    currency: Mapped[schemas.Currency]
-    target_date: Mapped[Optional[datetime]]
-    achieved: Mapped[bool] = mapped_column(default=False)
-    achieved_date: Mapped[Optional[datetime]]
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    
-    # Relationships
-    portfolio: Mapped["Portfolio"] = relationship()
+    # Convenience property to access portfolio transactions directly
+    @property
+    def portfolio_transactions(self) -> List["PortfolioTransaction"]:
+        return [assoc.portfolio_transaction for assoc in self.portfolio_transaction_associations]
 
-    __table_args__ = (
-        UniqueConstraint("portfolio_id", name="unique_target_portfolio"),
-    )
-
-class ContributionPlan(Base):
-    __tablename__ = "contribution_plan"
-    
-    id: Mapped[int] = mapped_column(primary_key=True)
-    portfolio_id: Mapped[Optional[int]] = mapped_column(ForeignKey("portfolio.id"), nullable=True, unique=True)
-    amount: Mapped[Decimal]
-    currency: Mapped[schemas.Currency]
-    frequency: Mapped[schemas.Frequency]
-    start_date: Mapped[datetime]
-    end_date: Mapped[Optional[datetime]]
-    active: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    # Relationships
-    portfolio: Mapped[Optional["Portfolio"]] = relationship()
-    schedules: Mapped[List["ContributionSchedule"]] = relationship(back_populates="contribution_plan")
-
-class ContributionSchedule(Base):
-    __tablename__ = "contribution_schedule"
-    
-    id: Mapped[int] = mapped_column(primary_key=True)
-    contribution_plan_id: Mapped[int] = mapped_column(ForeignKey("contribution_plan.id"))
-    due_date: Mapped[datetime]
-    amount: Mapped[Decimal]
-    status: Mapped[str] = mapped_column(default="pending")  # pending, completed, missed
-    completed_at: Mapped[Optional[datetime]]
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    
-    # Relationships
-    contribution_plan: Mapped["ContributionPlan"] = relationship(back_populates="schedules")
+# financial accounting model
 
 class Account(Base):
     __tablename__ = "account"
@@ -547,37 +529,25 @@ class Account(Base):
         # Relationships
     parent: Mapped[Optional["Account"]] = relationship("Account", remote_side=[id], back_populates="children")
     children: Mapped[List["Account"]] = relationship("Account", back_populates="parent", cascade="all, delete-orphan")
-    entries: Mapped[List["Entries"]] = relationship(back_populates="account")
+    entries: Mapped[List["JournalEntry"]] = relationship(back_populates="account")
 
 
 class Journal(Base):
     __tablename__ = "journal"
-    journal_date: Mapped[datetime] = mapped_column(server_default=func.now())
     id: Mapped[int] = mapped_column(primary_key=True)
     date: Mapped[datetime] = mapped_column(server_default=func.now())
 
-    entries: Mapped[List["Entries"]] = relationship(back_populates="journal")
+    entries: Mapped[List["JournalEntry"]] = relationship(back_populates="journal")
 
-class Entries(Base):
-    __tablename__ = "entries"
+class JournalEntry(Base):
+    __tablename__ = "journalentry"
     id: Mapped[int] = mapped_column(primary_key=True)
-    account_id: Mapped[int] = mapped_column(ForeignKey("account.id"))
-    journal_id: Mapped[int] = mapped_column(ForeignKey("journal.id"))
-    amount: Mapped[money]
+    accountId: Mapped[int] = mapped_column(ForeignKey("account.id"))
+    journalId: Mapped[int] = mapped_column(ForeignKey("journal.id"))
+    amount: Mapped[int]
     side: Mapped[schemas.EntrySide]  # e.g., "credit", "debit"
     description: Mapped[Optional[str]]
 
     journal: Mapped[Optional["Journal"]] = relationship(back_populates="entries")
     account: Mapped[Optional["Account"]] = relationship(back_populates="entries", lazy='selectin')
-
-class CashFlowStatus(Base):
-    __tablename__ = "cashflowstatus"
-    id: Mapped[int] = mapped_column(primary_key=True) 
-    status: Mapped[schemas.TrasnsactionStatus]
-    type: Mapped[schemas.CashFlowType]
-    transaction_id: Mapped[int] = mapped_column(ForeignKey("transaction.id"))
-    transaction: Mapped[Optional[PortfolioTransaction]] = relationship(lazy='selectin')
-
-
-    
 

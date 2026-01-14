@@ -16,17 +16,17 @@ username = settings.USERNAME
 password = settings.PASSWORD
 database = settings.DATABASE
 sslmode = settings.SSLMODE
+drivername = settings.DB_DRIVER
 
 db_url = URL.create(
-    drivername="postgresql+psycopg2",
-    username=settings.USERNAME,
-    password=settings.PASSWORD,
-    host=settings.HOST,
-    port=settings.PORT,
-    database=settings.DATABASE,
+    drivername=drivername,
+    username=username,
+    password=password,
+    host=host,
+    port=port,
+    database=database,
 )
 
-# connect_args = {"check_same_thread": False}
 engine = create_engine(db_url, pool_recycle=3600)
 
 async def get_session():

@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     RABBITMQ_URL: str
     REDIS_URL: str
+    DB_DRIVER: str
+    POLYGON_API_KEY: str
+    TIINGO_API_KEY: str
+    FINHUB_API_KEY: str
+    TWELVEDATA_API_KEY: str
 
 
 settings = Settings(

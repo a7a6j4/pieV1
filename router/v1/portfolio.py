@@ -1,19 +1,24 @@
+from cgi import print_exception
 from fastapi import FastAPI, APIRouter, Security, Depends, HTTPException, status, Query, Path, Body
 from fastapi.security import SecurityScopes
+import requests
 from database import db
 from sqlalchemy import select, update, delete, func, and_, or_, not_, desc, asc, extract, case
 from sqlalchemy.sql import over
 from sqlalchemy.orm import Session, selectinload
 from pydantic import BaseModel
-from typing import Optional, List, Union, Annotated
+from typing import Any, Optional, List, Union, Annotated
 from datetime import datetime
 import model
+from router.v1.product import getPrice
 from utils.payment_schedule import generate_schedule_dates
 from ..v1.user import getUser
 import schemas
 from decimal import Decimal
 import enum
 from ..v1 import auth
+from config import settings
+import utils
 
 portfolio = APIRouter(
     prefix="/portfolio",
@@ -22,15 +27,11 @@ portfolio = APIRouter(
 
 @portfolio.get("/")
 async def getPortfolio(
-    portfolio_id: int, 
+    portfolioId: int, 
     db: db, 
-    payload = Security(auth.readUser, scopes=["readUser"])):
+    user: Annotated[model.User, Security(getUser, scopes=["readUser"])]):
 
-  if payload.get("token") == "user":
-    user = select(model.User).where(model.User.email == payload.get("username")).subquery()
-    portfolio = db.execute(select(model.Portfolio).where(model.Portfolio.user_id == user.c.id, model.Portfolio.id == portfolio_id)).scalar_one_or_none()
-  if payload.get("token") == "admin":
-    portfolio = db.get(model.Portfolio, portfolio_id)
+  portfolio = db.execute(select(model.Portfolio).where(model.Portfolio.userId == user.id, model.Portfolio.id == portfolioId)).scalar_one_or_none()
 
   if not portfolio:
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
@@ -39,30 +40,25 @@ async def getPortfolio(
 @portfolio.post('/', response_model=schemas.PortfolioSchema)
 async def createPortfolio(
    db: db,
-   user = Security(auth.getActiveUser, scopes=["createUser"]),
-   attributes: Annotated[Optional[schemas.PortfolioCreate], Body()] = None
-):
+   type: schemas.PortfolioType,
+   user = Security(getUser, scopes=["createUser"]),
+   attributes: Annotated[Optional[schemas.PortfolioCreate], Body()] = None):
 
-    description = {
-     schemas.PortfolioType.EMERGENCY.value: "Six months monthly income savings, held in short term, low risk & high yield investments",
-     schemas.PortfolioType.LIQUID.value: "Holds cash to be needed in less than 90 days in highly liquid, low risk investments",
-     schemas.PortfolioType.INVEST.value: "Investment Portfolio"}
+   if type in [schemas.PortfolioType.EMERGENCY, schemas.PortfolioType.LIQUID]:
+    single_portfolio = db.execute(select(model.Portfolio).where(model.Portfolio.userId == user.id, model.Portfolio.type == type)).scalar_one_or_none()
+    if single_portfolio:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{type.value} portfolio already exists")
 
     portfolio = model.Portfolio(
-        user_id=user.id, 
-        type=schemas.PortfolioType.INVEST.name)
-    
-    if attributes.description is not None:
-        portfolio.description = attributes.description
-    
-    if attributes.risk is not None:
-        portfolio.risk = attributes.risk
+        userId=user.id, 
+        type=type, 
+        description=attributes.description if attributes.description else f"{type.value} portfolio", 
+        risk=1 if type == schemas.PortfolioType.EMERGENCY or type == schemas.PortfolioType.LIQUID else attributes.risk,
+        duration=1 if type == schemas.PortfolioType.EMERGENCY or type == schemas.PortfolioType.LIQUID else attributes.duration)
 
     if attributes.target is not None:
         target = model.Target(**attributes.target.model_dump())
         portfolio.target = target
-    else:
-        portfolio.description = description[schemas.PortfolioType.INVEST.value]
 
     db.add(portfolio)
     db.commit()
@@ -71,219 +67,163 @@ async def createPortfolio(
 
 @portfolio.get("/transactions")
 async def getPortfolioTransactions(
-    db: db, 
-    portfolio = Depends(getPortfolio)):
-   
-  portfolioTransactions = db.execute(select(model.PortfolioTransaction).where(model.PortfolioTransaction.portfolio_id == portfolio.id)).scalars().all()
+    db: db,
+    portfolio: Annotated[model.Portfolio, Depends(getPortfolio)],
+    status: Annotated[Optional[schemas.TransactionStatus], Query()] = None):
 
-  return portfolioTransactions
+    transactions = portfolio.transactions
+    if status:
+        transactions = [transaction for transaction in transactions if transaction.status == status]
+    return transactions
 
-async def getPortfolioJournal(db: db, portfolio = Depends(getPortfolio)):
-     
-  # portfolio_transactions = select(PortfolioTransaction).where(PortfolioTransaction.portfolio_id == portfolio.id)
+@portfolio.get("/assets")
+async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPortfolio)):
 
-  # transaction_holdings = select(VariableHolding).where(portfolio_transactions.c.id == VariableHolding.transaction_id)
+    variable_assets = db.execute(
+      select(model.Variable,
+          func.sum(case(
+            (model.VariableLedger.side == schemas.UserLedgerSide.IN, model.VariableLedger.units),
+            (model.VariableLedger.side == schemas.UserLedgerSide.OUT, -model.VariableLedger.units),
+          )).label("net_units"),
+          func.sum(case(
+            (model.VariableLedger.side == schemas.UserLedgerSide.IN, model.VariableLedger.amount),
+            (model.VariableLedger.side == schemas.UserLedgerSide.OUT, -model.VariableLedger.amount),
+          )).label("net_amount"),
+      ).join_from(model.VariableLedger, model.Variable, model.VariableLedger.variableId == model.Variable.id).where(model.VariableLedger.portfolioId == portfolio.id).distinct(model.Variable.id).group_by(model.Variable.id, model.Product.id)
+  ).mappings().all()
 
-  assets = db.execute(
-      select(
-          model.Product.title,
-          model.Product.currency,
-          model.VariableHolding.units,
-          model.VariableHolding.price,
-          (model.VariableHolding.units * model.VariableHolding.price).label("total_value"),
-          model.PortfolioTransaction.type,
-          model.PortfolioTransaction.transaction_date
-      )
-      .join(model.PortfolioTransaction, model.VariableHolding.transaction_id == model.PortfolioTransaction.id)
-      .join(model.Product, model.PortfolioTransaction.product_id == model.Product.id)
-      .where(model.PortfolioTransaction.portfolio_id == portfolio.id, model.Product.category == "variable")
-  ).all()
+    filtered_variable_assets = filter(lambda x: x.net_units > 0, variable_assets)
+    map_variable_assets = list(map(lambda x: {"Variable": x.Variable, "net_units": x.net_units, "net_amount": x.net_amount / 100, "vwac": (x.net_amount / 100) / x.net_units}, filtered_variable_assets))    
+    
+    transactions = select(model.DepositTransaction).where(model.DepositTransaction.portfolioId == portfolio.id).subquery()
+    deposits = db.execute(select(model.PortfolioDeposit, transactions).join_from(transactions, model.PortfolioDeposit, model.PortfolioDeposit.transactionId == transactions.c.id)).mappings().all()
 
-  deposits = db.execute(
-      select(
-          model.Product.title,
-          model.Product.currency,
-          model.UserDeposit.amount,
-          model.UserDeposit.tenor,
-          model.UserDeposit.start_date,
-          model.UserDeposit.rate,
-          model.PortfolioTransaction.type,
-          model.PortfolioTransaction.transaction_date
-      )
-      .join(model.PortfolioTransaction, model.UserDeposit.transaction_id == model.PortfolioTransaction.id)
-      .join(model.Product, model.PortfolioTransaction.product_id == model.Product.id)
-      .where(model.PortfolioTransaction.portfolio_id == portfolio.id, model.Product.category == "deposit")
-  ).all()
+    return {
+        "variable_assets": map_variable_assets,
+        "deposits": deposits,
+    }
+    
+@portfolio.get("/deposit-value")
+async def getNGDepositValue(depositId: int, db: db):
+    deposit = db.get(model.PortfolioDeposit, depositId)
+    if not deposit:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deposit not found")
+    
+    deposit_value = db.execute(select(
+        func.sum(case(
+            ((model.DepositLedger.account == schemas.PortfolioAccount.ASSET and model.DepositLedger.side == schemas.UserLedgerSide.IN),
+            model.DepositLedger.amount),
+            ((model.DepositLedger.account == schemas.PortfolioAccount.ASSET and model.DepositLedger.side == schemas.UserLedgerSide.OUT),
+            -model.DepositLedger.amount),
+        )).label("principal"),
+        func.sum(case(
+            ((model.DepositLedger.account == schemas.PortfolioAccount.INTEREST and model.DepositLedger.side == schemas.UserLedgerSide.IN),
+            model.DepositLedger.amount),
+            ((model.DepositLedger.account == schemas.PortfolioAccount.INTEREST and model.DepositLedger.side == schemas.UserLedgerSide.OUT),
+            -model.DepositLedger.amount),
+        )).label("accrued_interest"),
+        func.sum(case(
+            ((model.DepositLedger.account == schemas.PortfolioAccount.TAX and model.DepositLedger.side == schemas.UserLedgerSide.IN),
+            -model.DepositLedger.amount),
+            ((model.DepositLedger.account == schemas.PortfolioAccount.TAX and model.DepositLedger.side == schemas.UserLedgerSide.OUT),
+            model.DepositLedger.amount)
+        )).label("withholding_tax"),
+    ).where(model.DepositLedger.portfolioDepositId == deposit.id)).mappings().all()
 
-  # Combine and format the results
-  all_assets = []
-  for asset in assets:
-      all_assets.append({
-          "product_title": asset.title,
-          "currency": asset.currency.value,
-          "units": float(asset.units),
-          "price": float(asset.price),
-          "total_value": float(asset.total_value),
-          "type": asset.transaction_type.value,
-          "transaction_date": asset.transaction_date.isoformat(),
-          "asset_type": "variable"
-      })
-  
-  for deposit in deposits:
-      all_assets.append({
-          "product_title": deposit.title,
-          "currency": deposit.currency.value,
-          "amount": float(deposit.amount),
-          "tenor": deposit.tenor,
-          "start_date": deposit.start_date.isoformat(),
-          "rate": float(deposit.rate),
-          "transaction_type": deposit.transaction_type.value,
-          "transaction_date": deposit.transaction_date.isoformat(),
-          "asset_type": "deposit"
-      })
+    principal = (deposit_value[0].principal if deposit_value[0].principal else 0) / 100
+    accrued_interest = (deposit_value[0].accrued_interest if deposit_value[0].accrued_interest else 0) / 100
+    withholding_tax = (deposit_value[0].withholding_tax if deposit_value[0].withholding_tax else 0) / 100
+    current_value = principal + accrued_interest - withholding_tax
 
-  return all_assets
+    return {"deposit": deposit, "current_value": current_value, "principal": principal, "accrued_interest": accrued_interest, "withholding_tax": withholding_tax}
 
-async def getPortfolioVariableAssets(
-    db: db, 
-    portfolio = Depends(getPortfolio)):
+@portfolio.get("/value")
+async def getPortfolioValue(
+    db: db,
+    assets = Depends(getPortfolioAssets)
+):
 
-    testing = db.execute(select(
-        model.Product,
-        model.VariableValue.value.label("price"),
-        (func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.INVESTMENT,
-                    schemas.TransactionType.INTEREST,
-                    schemas.TransactionType.BUY
-                ]), model.VariableHolding.units),
-                else_=0
-            )
-        ) -
-        func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.LIQUIDATION, 
-                    schemas.TransactionType.SELL, 
-                    schemas.TransactionType.WITHDRAWAL]), 
-                    model.VariableHolding.units),
-                else_=0
-            )
-        )).label("units"),
-        (model.VariableValue.value * 
-        (func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.INVESTMENT,
-                    schemas.TransactionType.INTEREST,
-                    schemas.TransactionType.BUY
-                ]), model.VariableHolding.units),
-                else_=0
-            )
-        ) -
-        func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.LIQUIDATION, 
-                    schemas.TransactionType.SELL, 
-                    schemas.TransactionType.WITHDRAWAL]), 
-                    model.VariableHolding.units),
-                else_=0
-            )
-        ))).label("value"),
-        ((func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.INVESTMENT,
-                    schemas.TransactionType.INTEREST,
-                    schemas.TransactionType.BUY
-                ]), model.PortfolioTransaction.amount),
-                else_=0
-            )
-        ) - func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.LIQUIDATION, 
-                    schemas.TransactionType.SELL, 
-                    schemas.TransactionType.WITHDRAWAL]), 
-                    model.PortfolioTransaction.amount),
-                else_=0
-            )
-        )) / (func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.INVESTMENT,
-                    schemas.TransactionType.INTEREST,
-                    schemas.TransactionType.BUY
-                ]), model.VariableHolding.units),
-                else_=0
-            )
-        ) - func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.LIQUIDATION, 
-                    schemas.TransactionType.SELL, 
-                    schemas.TransactionType.WITHDRAWAL]), 
-                    model.VariableHolding.units),
-                else_=0
-            )
-        ))).label("vwac"),
-        (model.VariableValue.value / 
-        (
-            (func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.INVESTMENT,
-                    schemas.TransactionType.INTEREST,
-                    schemas.TransactionType.BUY
-                ]), model.PortfolioTransaction.amount),
-                else_=0
-            )
-        ) - func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.LIQUIDATION, 
-                    schemas.TransactionType.SELL, 
-                    schemas.TransactionType.WITHDRAWAL]), 
-                    model.PortfolioTransaction.amount),
-                else_=0
-            )
-        )) / (func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.INVESTMENT,
-                    schemas.TransactionType.INTEREST,
-                    schemas.TransactionType.BUY
-                ]), model.VariableHolding.units),
-                else_=0
-            )
-        ) - func.sum(
-            case(
-                (model.PortfolioTransaction.type.in_([
-                    schemas.TransactionType.LIQUIDATION, 
-                    schemas.TransactionType.SELL, 
-                    schemas.TransactionType.WITHDRAWAL]), 
-                    model.VariableHolding.units),
-                else_=0
-            )
-        ))
-        ) - 1
-        ).label("return"),
+    assets_list = []
+    print(assets["variable_assets"])
+    for asset in assets["variable_assets"]:
+        if asset["Variable"].productGroup.productClass == schemas.ProductClass.EQUITY and asset["Variable"].productGroup.market == schemas.Country.NG:
+            value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == asset["Variable"].id).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
+            price = value.price / 100
+            current_value = asset["net_units"] * price
+            invested_amount = asset["net_amount"]
+            performance = (current_value - invested_amount) / invested_amount
+            assets_list.append({
+                "product": asset["Variable"],
+                "invested_amount": invested_amount,
+                "vwac": asset["vwac"],
+                "current_price": price,
+                "current_value": current_value,
+                "performance": performance,
+                "category": "variable",
+            })
+        elif asset["Variable"].productGroup.productClass == schemas.ProductClass.EQUITY and asset["Variable"].productGroup.market == schemas.Country.US:
+            price = await getPrice(db=db, variable_id=asset["Variable"].id)
+            performance = (price / asset["vwac"]) - 1
+            assets_list.append({
+                "product": asset["Variable"],
+                "invested_amount": asset["net_amount"],
+                "vwac": asset["vwac"],
+                "current_price": price,
+                "current_value": asset["net_units"] * price,
+                "performance": performance,
+                "category": "variable",
+            })
+        elif asset["Variable"].productGroup.productClass == schemas.ProductClass.MUTUAL_FUND:
+            pass
 
-    )
-    .join(model.VariableHolding, model.PortfolioTransaction.id == model.VariableHolding.transaction_id)
-    .join(model.Product, model.PortfolioTransaction.product_id == model.Product.id)
-    .join(model.VariableValue, model.Product.id == model.VariableValue.var_id)
-    .where(model.PortfolioTransaction.portfolio_id == portfolio.id, model.Product.category == "variable")
-    .distinct(model.VariableValue.value)
-    .group_by(model.Product.id, model.VariableValue.value)
-    .order_by(model.VariableValue.value.desc())
-    .limit(1)
-    ).mappings().all()
+    for deposit in assets["deposits"]:
+        current_value = await getNGDepositValue(deposit["PortfolioDeposit"].id, db)
+        invested_amount = deposit["amount"] / 100
+        performance = (current_value["current_value"] - invested_amount) / invested_amount
+        holding_period = min(datetime.now(), deposit["PortfolioDeposit"].maturityDate) - deposit["PortfolioDeposit"].effectiveDate
+        annualized_performance = (1 + performance)**(365 / holding_period.days) - 1
+        assets_list.append({
+            "deposit": deposit["PortfolioDeposit"],
+            "rate": deposit["rate"],
+            "tenor": deposit["tenor"],
+            "invested_amount": invested_amount,
+            "current_value": current_value["current_value"],
+            "performance": annualized_performance,
+            "holding_period": holding_period.days,
+            "category": "deposit",
+        })
 
-    return testing
+    total_value = sum(map(lambda x: x["current_value"], assets_list))
+    total_invested = sum(map(lambda x: x["invested_amount"], assets_list))
+    performance = (total_value - total_invested) / total_invested if total_invested > 0 or total_value > 0 else 0
 
+    
+    ngn_deposits = list(filter(lambda x: x["category"] == "deposit" and x["deposit"].transaction.product.currency == schemas.Currency.NGN, assets_list))
+    usd_deposits = list(filter(lambda x: x["category"] == "deposit" and x["deposit"].transaction.product.currency == schemas.Currency.USD, assets_list))
+    ngn_variable = list(filter(lambda x: x["category"] == "variable" and x["product"].currency == schemas.Currency.NGN, assets_list))
+    usd_variable = list(filter(lambda x: x["category"] == "variable" and x["product"].currency == schemas.Currency.USD, assets_list))
+
+    (ngn_deposits_value, ngn_deposits_invested) = (sum(map(lambda x: x["current_value"], ngn_deposits)), sum(map(lambda x: x["invested_amount"], ngn_deposits)))
+    (usd_deposits_value, usd_deposits_invested) = (sum(map(lambda x: x["current_value"], usd_deposits)), sum(map(lambda x: x["invested_amount"], usd_deposits)))
+    (ngn_variable_value, ngn_variable_invested) = (sum(map(lambda x: x["current_value"], ngn_variable)), sum(map(lambda x: x["invested_amount"], ngn_variable)))
+    (usd_variable_value, usd_variable_invested) = (sum(map(lambda x: x["current_value"], usd_variable)), sum(map(lambda x: x["invested_amount"], usd_variable)))
+
+    try:
+        usd_performance = ((usd_variable_value + usd_deposits_value) - (usd_variable_invested + usd_deposits_invested)) / (usd_variable_invested + usd_deposits_invested)
+    except:
+        usd_performance = 0
+    try:
+        ngn_performance = ((ngn_variable_value + ngn_deposits_value) - (ngn_variable_invested + ngn_deposits_invested)) / (ngn_variable_invested + ngn_deposits_invested)
+    except:
+        ngn_performance = 0
+
+    return {
+        "total_value_ngn": ngn_variable_value + ngn_deposits_value,
+        "total_value_usd": usd_variable_value + usd_deposits_value,
+        "total_performance_ngn": ngn_performance,
+        "total_performance_usd": usd_performance,
+        "assets": assets_list,
+    }
 
 async def getPortfolioDeposits(
     db: db, 
@@ -319,42 +259,6 @@ async def getPortfolioDeposits(
     }, user_deposits)
 
     return list(deposit_list)
-
-
-@portfolio.get("/assets")
-async def getPortfolioAssets(
-    db: db, 
-    portfolio = Depends(getPortfolio)):
-
-    return await getPortfolioVariableAssets(db, portfolio) + await getPortfolioDeposits(db, portfolio)
-
-@portfolio.get("/value")
-async def getPortfolioValue(
-    products = Depends(getPortfolioAssets),
-    currency: schemas.Currency = Query(default=None)):
-
-    # print(products)
-
-    usd_value = sum(x["value"] for x in filter(lambda x: x["Product"].currency == schemas.Currency.USD, products))
-    ngn_value = sum(x["value"] for x in filter(lambda x: x["Product"].currency == schemas.Currency.NGN, products))
-
-    total_usd = float(usd_value) + (float(ngn_value) / 1600)
-    total_ngn = float(ngn_value) + (float(total_usd) * 1600)
-
-    all_value = {
-        "usdAssets": usd_value,
-        "ngnAssets": ngn_value,
-        "totalInUsd": total_usd,
-        "totalInNgn": total_ngn,
-        "last_calculated": datetime.now().isoformat()
-    }
-
-    if currency == schemas.Currency.USD:
-        return all_value["totalInUsd"]
-    elif currency == schemas.Currency.NGN:
-        return all_value["totalInNgn"]
-    else:
-        return all_value
     
 @portfolio.get("/product-fit")  
 async def checkProductFit(

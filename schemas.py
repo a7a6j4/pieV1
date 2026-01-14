@@ -1,8 +1,282 @@
+from ctypes import Union
 from pydantic import BaseModel, model_validator, field_validator, Field as field
 from typing import Optional, List, Annotated
 from datetime import datetime, date
 from decimal import Decimal
 import enum
+
+class Country(enum.Enum):
+    """
+    A list of ISO 3166-1 alpha-2 country codes.
+    The value of each member is the same as its name.
+    """
+    # N-G and A-D
+    NG = 'NG'  # Nigeria
+    AF = 'AF'  # Afghanistan
+    AX = 'AX'  # Åland Islands
+    AL = 'AL'  # Albania
+    DZ = 'DZ'  # Algeria
+    AS = 'AS'  # American Samoa
+    AD = 'AD'  # Andorra
+    # A
+    AO = 'AO'  # Angola
+    AI = 'AI'  # Anguilla
+    AQ = 'AQ'  # Antarctica
+    AG = 'AG'  # Antigua and Barbuda
+    AR = 'AR'  # Argentina
+    AM = 'AM'  # Armenia
+    AW = 'AW'  # Aruba
+    AU = 'AU'  # Australia
+    AT = 'AT'  # Austria
+    AZ = 'AZ'  # Azerbaijan
+    # B
+    BH = 'BH'  # Bahrain
+    BS = 'BS'  # Bahamas
+    BD = 'BD'  # Bangladesh
+    BB = 'BB'  # Barbados
+    BY = 'BY'  # Belarus
+    BE = 'BE'  # Belgium
+    BZ = 'BZ'  # Belize
+    BJ = 'BJ'  # Benin
+    BM = 'BM'  # Bermuda
+    BT = 'BT'  # Bhutan
+    BO = 'BO'  # Bolivia (Plurinational State of)
+    BQ = 'BQ'  # Bonaire, Sint Eustatius and Saba
+    BA = 'BA'  # Bosnia and Herzegovina
+    BW = 'BW'  # Botswana
+    BV = 'BV'  # Bouvet Island
+    BR = 'BR'  # Brazil
+    IO = 'IO'  # British Indian Ocean Territory
+    BN = 'BN'  # Brunei Darussalam
+    BG = 'BG'  # Bulgaria
+    BF = 'BF'  # Burkina Faso
+    BI = 'BI'  # Burundi
+    # C
+    KH = 'KH'  # Cambodia
+    CM = 'CM'  # Cameroon
+    CA = 'CA'  # Canada
+    CV = 'CV'  # Cabo Verde
+    KY = 'KY'  # Cayman Islands
+    CF = 'CF'  # Central African Republic
+    TD = 'TD'  # Chad
+    CL = 'CL'  # Chile
+    CN = 'CN'  # China
+    CX = 'CX'  # Christmas Island
+    CC = 'CC'  # Cocos (Keeling) Islands
+    CO = 'CO'  # Colombia
+    KM = 'KM'  # Comoros
+    CG = 'CG'  # Congo
+    CD = 'CD'  # Congo (Democratic Republic of the)
+    CK = 'CK'  # Cook Islands
+    CR = 'CR'  # Costa Rica
+    CI = 'CI'  # Côte d'Ivoire
+    HR = 'HR'  # Croatia
+    CU = 'CU'  # Cuba
+    CW = 'CW'  # Curaçao
+    CY = 'CY'  # Cyprus
+    CZ = 'CZ'  # Czechia
+    # D-E
+    DK = 'DK'  # Denmark
+    DJ = 'DJ'  # Djibouti
+    DM = 'DM'  # Dominica
+    DO = 'DO'  # Dominican Republic
+    EC = 'EC'  # Ecuador
+    EG = 'EG'  # Egypt
+    SV = 'SV'  # El Salvador
+    GQ = 'GQ'  # Equatorial Guinea
+    ER = 'ER'  # Eritrea
+    EE = 'EE'  # Estonia
+    ET = 'ET'  # Ethiopia
+    # F
+    FK = 'FK'  # Falkland Islands (Malvinas)
+    FO = 'FO'  # Faroe Islands
+    FJ = 'FJ'  # Fiji
+    FI = 'FI'  # Finland
+    FR = 'FR'  # France
+    GF = 'GF'  # French Guiana
+    PF = 'PF'  # French Polynesia
+    TF = 'TF'  # French Southern Territories
+    # G
+    GA = 'GA'  # Gabon
+    GM = 'GM'  # Gambia
+    GE = 'GE'  # Georgia
+    DE = 'DE'  # Germany
+    GH = 'GH'  # Ghana
+    GI = 'GI'  # Gibraltar
+    GR = 'GR'  # Greece
+    GL = 'GL'  # Greenland
+    GD = 'GD'  # Grenada
+    GP = 'GP'  # Guadeloupe
+    GU = 'GU'  # Guam
+    GT = 'GT'  # Guatemala
+    GG = 'GG'  # Guernsey
+    GN = 'GN'  # Guinea
+    GW = 'GW'  # Guinea-Bissau
+    GY = 'GY'  # Guyana
+    # H-I
+    HT = 'HT'  # Haiti
+    HM = 'HM'  # Heard Island and McDonald Islands
+    VA = 'VA'  # Holy See
+    HN = 'HN'  # Honduras
+    HK = 'HK'  # Hong Kong
+    HU = 'HU'  # Hungary
+    IS = 'IS'  # Iceland
+    IN = 'IN'  # India
+    ID = 'ID'  # Indonesia
+    IR = 'IR'  # Iran (Islamic Republic of)
+    IQ = 'IQ'  # Iraq
+    IE = 'IE'  # Ireland
+    IM = 'IM'  # Isle of Man
+    IL = 'IL'  # Israel
+    IT = 'IT'  # Italy
+    # J-K
+    JM = 'JM'  # Jamaica
+    JP = 'JP'  # Japan
+    JE = 'JE'  # Jersey
+    JO = 'JO'  # Jordan
+    KZ = 'KZ'  # Kazakhstan
+    KE = 'KE'  # Kenya
+    KI = 'KI'  # Kiribati
+    KP = 'KP'  # Korea (Democratic People's Republic of)
+    KR = 'KR'  # Korea (Republic of)
+    KW = 'KW'  # Kuwait
+    KG = 'KG'  # Kyrgyzstan
+    # L
+    LA = 'LA'  # Lao People's Democratic Republic
+    LV = 'LV'  # Latvia
+    LB = 'LB'  # Lebanon
+    LS = 'LS'  # Lesotho
+    LR = 'LR'  # Liberia
+    LY = 'LY'  # Libya
+    LI = 'LI'  # Liechtenstein
+    LT = 'LT'  # Lithuania
+    LU = 'LU'  # Luxembourg
+    # M
+    MO = 'MO'  # Macao
+    MK = 'MK'  # North Macedonia
+    MG = 'MG'  # Madagascar
+    MW = 'MW'  # Malawi
+    MY = 'MY'  # Malaysia
+    MV = 'MV'  # Maldives
+    ML = 'ML'  # Mali
+    MT = 'MT'  # Malta
+    MH = 'MH'  # Marshall Islands
+    MQ = 'MQ'  # Martinique
+    MR = 'MR'  # Mauritania
+    MU = 'MU'  # Mauritius
+    YT = 'YT'  # Mayotte
+    MX = 'MX'  # Mexico
+    FM = 'FM'  # Micronesia (Federated States of)
+    MD = 'MD'  # Moldova (Republic of)
+    MC = 'MC'  # Monaco
+    MN = 'MN'  # Mongolia
+    ME = 'ME'  # Montenegro
+    MS = 'MS'  # Montserrat
+    MA = 'MA'  # Morocco
+    MZ = 'MZ'  # Mozambique
+    MM = 'MM'  # Myanmar
+    # N
+    NA = 'NA'  # Namibia
+    NR = 'NR'  # Nauru
+    NP = 'NP'  # Nepal
+    NL = 'NL'  # Netherlands
+    NC = 'NC'  # New Caledonia
+    NZ = 'NZ'  # New Zealand
+    NI = 'NI'  # Nicaragua
+    NE = 'NE'  # Niger
+    NU = 'NU'  # Niue
+    NF = 'NF'  # Norfolk Island
+    MP = 'MP'  # Northern Mariana Islands
+    NO = 'NO'  # Norway
+    # O-P
+    OM = 'OM'  # Oman
+    PK = 'PK'  # Pakistan
+    PW = 'PW'  # Palau
+    PS = 'PS'  # Palestine, State of
+    PA = 'PA'  # Panama
+    PG = 'PG'  # Papua New Guinea
+    PY = 'PY'  # Paraguay
+    PE = 'PE'  # Peru
+    PH = 'PH'  # Philippines
+    PN = 'PN'  # Pitcairn
+    PL = 'PL'  # Poland
+    PT = 'PT'  # Portugal
+    PR = 'PR'  # Puerto Rico
+    # Q-R
+    QA = 'QA'  # Qatar
+    RE = 'RE'  # Réunion
+    RO = 'RO'  # Romania
+    RU = 'RU'  # Russian Federation
+    RW = 'RW'  # Rwanda
+    # S
+    BL = 'BL'  # Saint Barthélemy
+    SH = 'SH'  # Saint Helena, Ascension and Tristan da Cunha
+    KN = 'KN'  # Saint Kitts and Nevis
+    LC = 'LC'  # Saint Lucia
+    MF = 'MF'  # Saint Martin (French part)
+    PM = 'PM'  # Saint Pierre and Miquelon
+    VC = 'VC'  # Saint Vincent and the Grenadines
+    WS = 'WS'  # Samoa
+    SM = 'SM'  # San Marino
+    ST = 'ST'  # Sao Tome and Principe
+    SA = 'SA'  # Saudi Arabia
+    SN = 'SN'  # Senegal
+    RS = 'RS'  # Serbia
+    SC = 'SC'  # Seychelles
+    SL = 'SL'  # Sierra Leone
+    SG = 'SG'  # Singapore
+    SX = 'SX'  # Sint Maarten (Dutch part)
+    SK = 'SK'  # Slovakia
+    SI = 'SI'  # Slovenia
+    SB = 'SB'  # Solomon Islands
+    SO = 'SO'  # Somalia
+    ZA = 'ZA'  # South Africa
+    GS = 'GS'  # South Georgia and the South Sandwich Islands
+    SS = 'SS'  # South Sudan
+    ES = 'ES'  # Spain
+    LK = 'LK'  # Sri Lanka
+    SD = 'SD'  # Sudan
+    SR = 'SR'  # Suriname
+    SJ = 'SJ'  # Svalbard and Jan Mayen
+    SZ = 'SZ'  # Eswatini
+    SE = 'SE'  # Sweden
+    CH = 'CH'  # Switzerland
+    SY = 'SY'  # Syrian Arab Republic
+    # T
+    TW = 'TW'  # Taiwan (Province of China)
+    TJ = 'TJ'  # Tajikistan
+    TZ = 'TZ'  # Tanzania, United Republic of
+    TH = 'TH'  # Thailand
+    TL = 'TL'  # Timor-Leste
+    TG = 'TG'  # Togo
+    TK = 'TK'  # Tokelau
+    TO = 'TO'  # Tonga
+    TT = 'TT'  # Trinidad and Tobago
+    TN = 'TN'  # Tunisia
+    TR = 'TR'  # Turkey
+    TM = 'TM'  # Turkmenistan
+    TC = 'TC'  # Turks and Caicos Islands
+    TV = 'TV'  # Tuvalu
+    # U-V
+    UG = 'UG'  # Uganda
+    UA = 'UA'  # Ukraine
+    AE = 'AE'  # United Arab Emirates
+    GB = 'GB'  # United Kingdom of Great Britain and Northern Ireland
+    US = 'US'  # United States of America
+    UM = 'UM'  # United States Minor Outlying Islands
+    UY = 'UY'  # Uruguay
+    UZ = 'UZ'  # Uzbekistan
+    VU = 'VU'  # Vanuatu
+    VE = 'VE'  # Venezuela (Bolivarian Republic of)
+    VN = 'VN'  # Viet Nam
+    VG = 'VG'  # Virgin Islands (British)
+    VI = 'VI'  # Virgin Islands (U.S.)
+    # W-Z
+    WF = 'WF'  # Wallis and Futuna
+    EH = 'EH'  # Western Sahara
+    YE = 'YE'  # Yemen
+    ZM = 'ZM'  # Zambia
+    ZW = 'ZW'  # Zimbabwe
 class NigeriaState(enum.Enum):
 
     KANO = "KANO"  
@@ -42,32 +316,6 @@ class NigeriaState(enum.Enum):
     NASARAWA = "NASARAWA"
     BAYELSA = "BAYELSA"
     FCT = "FCT"
-
-
-class AssetClass(enum.Enum):
-    USEQUITY='US Equities'
-    NGEQUITY='Nigeria Equities'    
-    USBONDS='US Bonds'
-    USTREASURY='US Treasury'
-    NGBONDS='Nigeria Bonds'
-    NGTREASURY='Nigeria Treasury Bills'
-    USCPAPER='US Commercial Debt'
-    NGCPAPER='Nigeria Commercial Paper'
-    USCORP='US Corporate Bond'
-    NGCORP='Nigeria Corporate Bond'
-    GLOBALEQUITY='Global Equities'
-    NGREAL='Nigeria Real Estate'
-    USREAL='US Real Estate'
-    NGPRIVATE='Nigeria Private Debt'
-    USPRIVATE='US Private Debt'
-    USDEPOSIT='USD Deposits'
-    NGDEPOSIT='NGN Deposits'
-    NGEURO='Nigeria Eurobonds'
-    SSEUR0='Sub-Sahara Africa Eurobonds'
-    FREUR0='Frontier Market Eurobonds'
-    FIXEDINCOME='Fixed Income'
-    MONEYMARKET='Money Market'
-    OTHER='Other'
 
 class ProductClass(enum.Enum):
     DEPOSIT = "Deposit"
@@ -147,8 +395,9 @@ class InterestPay(enum.Enum):
     HALFYEARLY = "half-yearly"
     ANNUALLY = "annually"
     ATMATURITY = "at-maturity"
+    CUSTOM = "custom"
 
-class TrasnsactionStatus(enum.Enum):
+class TransactionStatus(enum.Enum):
     PENDING = "pending"
     REVERSED = "reversed"
     COMPLETED = "completed"
@@ -188,6 +437,9 @@ class CashFlowType(enum.Enum):
     INFLOW = "inflow"
     OUTFLOW = "outflow"
 
+class ProductCategory(enum.Enum):
+    VARIABLE = "variable"
+    DEPOSIT = "deposit"
 
 inflow_types = [
    TransactionType.DEPOSIT,
@@ -208,6 +460,51 @@ def validate_date_not_past(v):
         raise ValueError("Date cannot be in the past")
     return v
 
+class FeeType(enum.Enum):
+    FLAT = "flat"
+    RELATIVE = "relative"
+
+class FeeClass(enum.Enum):
+    COMMISSION = "commission"
+    TAX = "tax"
+    THIRDPARTY = "thirdparty"
+
+class ProductGroupBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    market: Country
+
+class ProductGroupCreate(ProductGroupBase):
+    feeIds: Optional[List[int]] = None
+
+class ProductGroupUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    market: Optional[Country] = None
+    feeIds: Optional[List[int]] = None
+
+class ProductGroupSchema(ProductGroupBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    
+class TransactionFeeBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    sale: bool = False
+    purchase: bool = False
+    vat: bool = True
+    feeType: FeeType = FeeType.FLAT
+    fee: Optional[float] = None
+
+class TransactionFeeCreate(TransactionFeeBase):
+    pass
+
+class TransactionFeeSchema(TransactionFeeBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
 class IssuerBase(BaseModel):
     name: str
 
@@ -222,17 +519,29 @@ class IssuerSchema(IssuerBase):
     class Config:
         from_attributes = True
 
-class VariableBase(BaseModel):
-    symbol: str
-    type: VariableType
 
-class DepositBase(BaseModel):
-    min_tenor: int
-    max_tenor: int
-    interest_pay: str
-    penalty: Optional[Decimal] = None
-    tax: Optional[bool] = None
-    fixed: bool = None
+class ProductBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    riskLevel: int
+    horizon: int
+    img: Optional[str] = None
+    currency: Currency
+    isActive: bool = True
+    productGroupId: int
+
+class VariableBase(ProductBase):
+    symbol: str
+    productClass: VariableType
+
+class DepositBase(ProductBase):
+    minTenor: int
+    maxTenor: int
+    interestPay: InterestPay
+    penalty: Optional[int]
+    withholdingTax: int
+    fixed: bool = False
+    rate: int
 
 class VariableCreate(VariableBase):
     pass
@@ -240,22 +549,9 @@ class VariableCreate(VariableBase):
 class DepositCreate(DepositBase):
     pass
 
-class ProductBase(BaseModel):
-    title: str
-    description: Optional[str] = None
-    risk_level: int
-    horizon: int
-    img: Optional[str] = None
-    currency: Currency
-    is_active: bool = True
-
-class ProductCreate(ProductBase):
-    variable_data: Optional[VariableBase] = None
-    deposit_data: Optional[DepositBase] = None
-
 class ProductSchema(ProductBase):
     id: int
-    issuer_id: int
+    issuerId: int
     
     class Config:
         from_attributes = True
@@ -310,8 +606,8 @@ class UserSchema(UserBase):
     # kyc: model.Kyc
 
     class Config:
-
         from_attributes = True
+
 
 class RiskProfileBase(BaseModel):
     is_single: bool
@@ -353,13 +649,15 @@ class PortfolioBase(BaseModel):
 
 class PortfolioSchema(PortfolioBase):
     id: int
-    user_id: int
-    created_at: datetime
-    updated_at: datetime
-    deleted_at: Optional[datetime] = None
+    userId: int
+    created: datetime
+    updated: datetime
 
     class Config:
         from_attributes = True
+
+class UserOut(UserSchema):
+    portfolios: List[PortfolioSchema]
 
 class TargetBase(BaseModel):
     amount: Decimal
@@ -467,27 +765,33 @@ class WalletTransactionSchema(WalletTransactionBase):
 class WalleTransactionOut(WalletTransactionSchema):
     amount: int
     transaction_type: TransactionType
-    status: TrasnsactionStatus
+    status: TransactionStatus
     transaction_date: datetime
     side: EntrySide
 
 class AccountSchema(BaseModel):
     id: int
     account_type: AccountType
-
-
-
-
     class Config:
         from_attributes = True
 
+class PurchaseOrder(BaseModel):
+  productId: int
+  amount: float
+  tenor: Optional[int] = None
+
+class SaleOrder(BaseModel):
+    id: int
+    amount: float
+    type: ProductCategory
+    
 class VariableIn(BaseModel):
   product_id: int
-  amount: Decimal
+  amount: float
 
 class DepositIn(BaseModel):
    product_id: int
-   amount: Decimal
+   amount: float
    tenor: int
 
 class DepositSale(BaseModel):
@@ -619,19 +923,19 @@ class GrowthRecommendationCreate(BaseModel):
     duration: int
 
 class SignupCreate(BaseModel):
-    first_name: str
-    last_name: str
-    other_name: Optional[str] = None
-    telephone: str
+    firstName: str
+    lastName: str
+    otherNames: Optional[str] = None
+    phoneNumber: str
     email: str
 
     class Config:
         json_schema_extra = {
             "example": {
-                "first_name": "Jane",
-                "last_name": "Doe",
-                "other_name": "Ann",
-                "telephone": "+2348012345678",
+                "firstName": "Jane",
+                "lastName": "Doe",
+                "otherNames": "Ann",
+                "phoneNumber": "+2348012345678",
                 "email": "jane.doe@example.com"
             }
         }
@@ -651,7 +955,6 @@ class TokenResponse(BaseModel):
             }
         }
 
-
 class AccessLimit(enum.Enum):
     PASSWORD = "createPassword"
     LOGIN = "login"
@@ -665,6 +968,16 @@ class AccessLimit(enum.Enum):
 class SigninTokenResponse(TokenResponse):
     limit: AccessLimit
     refresh: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NTc3ODYyMDQsIm90cCI6IjEzNTkyIiwiZmlyc3RfbmFtZSI6IkpvaG4iLCJsYXN0X25hbWUiOiJBc3VxdW8iLCJvdGhlcl9uYW1lIjoiIiwidGVsZXBob25lIjpudWxsLCJlbWFpbCI6InBpZV90ZXN0XzFAeW9wbWFpbC5jb20ifQ.8CN0JipmThERMqgVarKEFGS2m0oDL49vpNPki7Q142c",
+                "token_type": "bearer",
+                "expires_in": 90,
+                "limit": "login"
+            }
+        }
 
 class AdminUserCreate(BaseModel):
     first_name: str
@@ -697,62 +1010,31 @@ opr = {
     }
 }
 
+class PortfolioAccount(enum.Enum):
+    ASSET = "asset"
+    INTEREST = "interest"
+    TAX = "tax"
+    DIVIDEND = "dividend"
+    PROFIT_LOSS = "profit_loss"
 
-class AnchorAccountCreate(BaseModel):
-    first_name: str
-    last_name: str
-    maiden_name: Optional[str] = None
-    address_line_1: str
-    address_line_2: Optional[str] = None
-    city: str
-    state: NigeriaState
-    postal_code: str
-    email: str
-    phone_number: str
-    doing_business_as: Optional[str] = None
-    is_sole_proprietor: bool = False
+class UserLedgerSide(enum.Enum):
+    IN = "in"
+    OUT = "out"
 
-# payload = { "data": { "attributes": {
-#             "fullName": {
-#                 "firstName": "John",
-#                 "lastName": "Asuquo",
-#                 "maidenName": "John Asuquo"
-#             },
-#             "address": {
-#                 "country": "NG",
-#                 "state": "LAGOS",
-#                 "addressLine_1": "52 Unity Road, By Co-Op Villas, Badore, Ajah",
-#                 "city": "Lagos",
-#                 "postalCode": "105101"
-#             },
-#             "email": "ani@cleva.ng",
-#             "phoneNumber": "08082835454",
-#             "doingBusinessAs": "Cleva Platforms Nigeria Ltd",
-#             "isSoleProprietor": False
-#         } } }
-# headers = {
-#     "accept": "application/json",
-#     "content-type": "application/json",
-#     "x-anchor-key": "hfVz5.1f836e3cf846c4fb0695e31cf2a4f2eff8869c878f950a65385658c5aca2e0834f064e545e355d852b734b0b6918e88dd0d2"
-# }
+class UserLedgerType(enum.Enum):
+    DEPOSIT = "deposit"
+    WITHDRAWAL = "withdrawal"
+    INVESTMENT = "investment"
+    DIVIDEND = "dividend"
+    INTEREST = "interest"
+    LIQUIDATION = "liquidation"
+    FEE = "fee"
+    TAX = "tax"
 
-
-class Address(BaseModel):
-    addressLine_1: str
-    addressLine_2: Optional[str] = None
-    city: str
-    postalCode: str
-    state: NigeriaState
 
 class Gender(enum.Enum):
     MALE = "Male"
     FEMALE = "Female"
-
-class AnchorKycLevel2(BaseModel):
-    dateOfBirth: datetime
-    gender: Gender = field(description="Gender must be either Male or Female")
-    bvn: str = field(max_length=11, min_length=11, description="BVN must be 11 digits")
-    selfieImage: str
 
 class IDType(enum.Enum):
     DRIVERS_LICENSE = "DRIVERS_LICENSE"
@@ -760,6 +1042,42 @@ class IDType(enum.Enum):
     PASSPORT = "PASSPORT"
     NATIONAL_ID = "NATIONAL_ID"
     NIN_SLIP = "NIN_SLIP"
+
+class AnchorAccountCreate(BaseModel):
+    firstName: str
+    lastName: str
+    middleName: Optional[str] = None
+    maidenName: Optional[str] = None
+    addressLineOne: str
+    addressLineTwo: Optional[str] = None
+    city: str
+    state: NigeriaState
+    postalCode: str
+    email: str
+    phoneNumber: str
+    dateOfBirth: datetime
+    gender: Gender
+    bvn: str = field(max_length=11, min_length=11, description="BVN must be 11 digits")
+    idType: IDType
+    idNumber: str
+    expiryDate: datetime
+
+class Address(BaseModel):
+    houseNumber: Optional[str] = None
+    addressLineOne: str
+    addressLineTwo: Optional[str] = None
+    city: str
+    state: NigeriaState
+    country: Country = field(default=Country.NG)
+    postalCode: str
+
+
+class AnchorKycLevel2(BaseModel):
+    dateOfBirth: datetime
+    gender: Gender = field(description="Gender must be either Male or Female")
+    bvn: str = field(max_length=11, min_length=11, description="BVN must be 11 digits")
+    selfieImage: str
+
 
 class AnchorKycLevel3(BaseModel):
     idType: IDType
@@ -777,7 +1095,7 @@ class AddressProofType(enum.Enum):
     ADDRESS_PROOF = "ADDRESS_PROOF"
 
 class KycCreate(BaseModel):
-    maidenName: Optional[str] = None
+    maidenName: str
     address: Address
     dateOfBirth: datetime
     gender: Gender = field(description="Gender must be either Male or Female")
@@ -786,7 +1104,7 @@ class KycCreate(BaseModel):
     idNumber: str
     idExpirationDate: datetime
     addressProofType: AddressProofType
-    phoneNumber: str
+    taxId: Optional[str] = None
 
 class AnchorKycCreate(KycCreate):
     firstName: str
@@ -813,27 +1131,6 @@ class KycUpdate(BaseModel):
     idExpirationDate: Optional[datetime] = None
 
 
-class AnchorAccountCreate(BaseModel):
-    firstName: str
-    lastName: str
-    maidenName: Optional[str] = None
-    addressLine_1: str
-    addressLine_2: Optional[str] = None
-    city: str
-    state: NigeriaState
-    postalCode: str
-    email: str
-    phoneNumber: str
-    dateOfBirth: datetime
-    gender: str
-    bvn: str
-    selfieImage: str
-    idType: IDType
-    idNumber: str
-    idFrontImage: str
-    idBackImage: str
-    idExpirationDate: datetime
-
 class UserDocumentType(enum.Enum):
     PASSPORT = "PASSPORT"
     FRONT_ID = "FRONT_ID"
@@ -857,3 +1154,9 @@ class TargetCommit(BaseModel):
 class AnchorMode(enum.Enum):
     SANDBOX = "sandbox"
     LIVE = "live"
+
+class WalletGroupCreate(BaseModel):
+  name: str
+  description: Optional[str] = None
+  currency: Currency
+  receivableAccountId: int
