@@ -195,7 +195,22 @@ class ProductGroup(Base):
     )
 
     products: Mapped[List["Product"]] = relationship(back_populates="productGroup")
-    transactionFees: Mapped[List["ProductGroupFees"]] = relationship(back_populates="productGroup", lazy='selectin')
+    transactionFees: Mapped[List["ProductGroupFees"]] = relationship(back_populates="productGroup")
+    stats: Mapped[Optional["ProductGroupStats"]] = relationship(back_populates="productGroup")
+
+class ProductGroupStats(Base):
+    __tablename__ = "productgroupstats"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    productGroupId: Mapped[int] = mapped_column(ForeignKey("productgroup.id"))
+    stdDev: Mapped[float]
+    variance: Mapped[float]
+    correlation: Mapped[float]
+    beta: Mapped[float]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+    productGroup: Mapped["ProductGroup"] = relationship(back_populates="stats")
 
 class TransactionFee(Base):
     __tablename__ = "transactionfee"
@@ -221,7 +236,7 @@ class Product(Base):
     title: Mapped[str] = mapped_column(index=True, unique=True)
     description: Mapped[Optional[str]]
     productGroupId: Mapped[int] = mapped_column(ForeignKey("productgroup.id"))
-    productGroup: Mapped["ProductGroup"] = relationship(back_populates="products", lazy='selectin')
+    productGroup: Mapped["ProductGroup"] = relationship(back_populates="products")
     riskLevel: Mapped[int]
     horizon: Mapped[int]
     img: Mapped[Optional[str]]
@@ -306,10 +321,11 @@ class Portfolio(Base):
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="portfolios")
-    transactions: Mapped[List["PortfolioTransaction"]] = relationship(back_populates="portfolio", lazy='selectin')
+    transactions: Mapped[List["PortfolioTransaction"]] = relationship(back_populates="portfolio")
     target: Mapped[Optional["PortfolioTarget"]] = relationship(back_populates="portfolio")
-    # target: Mapped[Optional["Target"]] = relationship(back_populates="portfolio")
-    # contribution_plan: Mapped[Optional["ContributionPlan"]] = relationship(back_populates="portfolio")
+    contributionPlan: Mapped[Optional["PortfolioContributionPlan"]] = relationship(back_populates="portfolio")
+    allocation: Mapped[Optional["PortfolioAllocation"]] = relationship(back_populates="portfolio")
+    stats: Mapped[Optional["PortfolioStats"]] = relationship(back_populates="portfolio")
 
 class PortfolioTarget(Base):
     __tablename__ = "portfoliotarget"
@@ -317,9 +333,40 @@ class PortfolioTarget(Base):
     portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
     amount: Mapped[int]
     currency: Mapped[schemas.Currency]
+    targetDate: Mapped[Optional[datetime]]
     created: Mapped[datetime] = mapped_column(server_default=func.now())
     updated: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
     portfolio: Mapped["Portfolio"] = relationship(back_populates="target")
+
+class PortfolioContributionPlan(Base):
+    __tablename__ = "portfoliocontributionplan"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
+    amount: Mapped[int]
+    currency: Mapped[schemas.Currency]
+    frequency: Mapped[schemas.Frequency]
+    startDate: Mapped[datetime]
+    nextContributionDate: Mapped[datetime]
+    portfolio: Mapped["Portfolio"] = relationship(back_populates="contributionPlan")
+
+class PortfolioAllocation(Base):
+    __tablename__ = "portfolioallocation"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
+    targetAllocation: Mapped[float]
+    productGroupId: Mapped[int] = mapped_column(ForeignKey("productgroup.id"))
+    productGroup: Mapped["ProductGroup"] = relationship()
+
+    portfolio: Mapped["Portfolio"] = relationship(back_populates="allocation")
+
+class PortfolioStats(Base):
+    __tablename__ = "portfoliostats"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
+    portfolio: Mapped["Portfolio"] = relationship(back_populates="stats")
+    ngnvalue: Mapped[float]
+    usdvalue: Mapped[float]
+    date: Mapped[datetime]
 
 class PortfolioDeposit(Base):
     __tablename__ = "portfoliodeposit"

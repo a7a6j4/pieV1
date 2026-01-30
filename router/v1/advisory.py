@@ -549,4 +549,8 @@ async def getTargetRecommendation(db: db,
   else:
     pass
 
+@advisory.get("/portfolio/allocation")
+async def getPortfolioAllocation(db: db, portfolio: model.Portfolio = Depends(getPortfolio)):
+  pass
+
 

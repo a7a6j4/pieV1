@@ -646,7 +646,6 @@ class PortfolioBase(BaseModel):
     duration: Optional[int] = None
     description: Optional[str] = None
 
-
 class PortfolioSchema(PortfolioBase):
     id: int
     userId: int
@@ -659,64 +658,31 @@ class PortfolioSchema(PortfolioBase):
 class UserOut(UserSchema):
     portfolios: List[PortfolioSchema]
 
-class TargetBase(BaseModel):
-    amount: Decimal
-    date: Annotated[Optional[datetime], field(gt=date.today())]
+class TargetCreate(BaseModel):
+    amount: float
     currency: Currency
+    targetDate: Optional[datetime] = None
 
-class TargetCreate(TargetBase):
-    pass
+class CommitmentCreate(BaseModel):
+    amount: float
+    currency: Currency
+    frequency: Frequency
+    startDate: Optional[datetime] = datetime.now()
 
-class TargetSchema(TargetBase):
-    id: int
-    portfolio_id: int
-    commitment_id: Optional[int] = None
-    achieved: bool
+class AllocationCreate(BaseModel):
+  targetAllocation: float
+  productGroupId: int
 
-    class Config:
-        from_attributes = True
+class PortfolioAttributeCreate(BaseModel):
+  target: Optional[TargetCreate] = None
+  commitment: Optional[CommitmentCreate] = None
+  allocation: Optional[List[AllocationCreate]] = None
 
-class PortfolioCreate(BaseModel):
+class PortfolioCreate(PortfolioBase):
     description: Optional[str] = None
-    risk: Optional[int] = field(le=4)
-    target: Optional[TargetCreate] = None
-
-class CommitmentBase(BaseModel):
-    amount: Decimal = Decimal(0)
-    frequency: Optional[str] = None
-    start_date: Optional[Annotated[datetime, field(le=date.today())]] = None
-    duration: int = 0
-    active: bool = False
-    
-    @field_validator('start_date')
-    def validate_start_date(cls, v):
-        return validate_date_not_past(v)
-
-class CommitmentCreate(CommitmentBase):
-    pass
-
-class CommitmentSchema(CommitmentBase):
-    id: int
-    portfolio_id: int
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-class TargetCommitCreate(BaseModel):
     target: Optional[TargetCreate] = None
     commitment: Optional[CommitmentCreate] = None
-
-class PortfolioAttributesCreate(BaseModel):
-    target: Optional[TargetCreate] = None
-    plan: Optional[CommitmentCreate] = None
-    targetAllocation: Optional[float] = None
-
-class PortfolioAttributesUpdate(PortfolioAttributesCreate):
-    type: Optional[PortfolioType] = None
-    description: Optional[str] = None
-    risk: Optional[int] = None
+    allocation: List[AllocationCreate]
 
 class AccountBase(BaseModel):
     account_type: AccountType
@@ -1137,19 +1103,6 @@ class UserDocumentType(enum.Enum):
     BACK_ID = "BACK_ID"
     SELFIE = "SELFIE"
     PROOF_OF_ADDRESS = "PROOF_OF_ADDRESS"
-
-class TargetCreate(BaseModel):
-    amount: float
-    date: Optional[datetime] = None
-
-class CommitmentCreate(BaseModel):
-    amount: float
-    frequency: Optional[str] = None
-    duration: Optional[int] = None
-
-class TargetCommit(BaseModel):
-  target: Optional[TargetCreate]
-  commitment: Optional[CommitmentCreate]
 
 class AnchorMode(enum.Enum):
     SANDBOX = "sandbox"

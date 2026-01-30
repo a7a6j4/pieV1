@@ -12,7 +12,7 @@ import schemas
 from ..v1 import auth
 from utils.minio_to_base64 import convert_minio_image_to_base64
 from utils.assesment import runAssesment
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import select, update, insert
 from celery_app import linkAnchorAccountTask, uploadAnchorKycDocumentTask, createAnchorDepositAccountTask, validateAnchorTier2KycTask, validateAnchorTier3KycTask
 from utils.minio import upload_file, get_file, download_s3_object_for_requests, validate_image_file
@@ -64,6 +64,24 @@ async def set_password(db: db, password = Body(..., embed=True), payload = Secur
     db.commit()
     db.refresh(user)
     return user
+
+@user.post("/change-password")
+async def changePassword(db: db, user: Annotated[model.User, Depends(auth.getActiveUser)]):
+    # create a new password token
+    create_password_token = auth.createToken(
+        data={'username': user.email, "scope": schemas.AccessLimit.PASSWORD.value}, expires_delta=timedelta(seconds=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"])
+    )
+    return schemas.TokenResponse(token=create_password_token, token_type="bearer", expires_in=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"], limit=schemas.AccessLimit.PASSWORD)
+
+@user.patch("/password", status_code=status.HTTP_201_CREATED)
+async def updatePassword(db: db, new_password = Body(..., embed=True), token = Security(auth.verifyAccessToken, scopes=[schemas.AccessLimit.PASSWORD.value])):
+    print(token)
+    user = db.execute(update(model.User).where(model.User.email == token.get('username')).values(password=auth.hashpass(new_password)).returning(model.User)).scalar_one()
+    db.commit()
+    db.refresh(user)
+    return {
+        "message": "Password updated successfully"
+    }
 
 # @user.get("/", response_model=schemas.UserOut)
 @user.get("/")

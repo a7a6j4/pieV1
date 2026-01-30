@@ -3,6 +3,7 @@ alpaca-py==0.42.0
 amqp==5.3.1
 annotated-types==0.7.0
 anyio==4.9.0
+appnope==0.1.4
 argon2-cffi==25.1.0
 argon2-cffi-bindings==25.1.0
 asttokens==3.0.0
@@ -79,6 +80,7 @@ Pygments==2.19.1
 PyJWT==2.10.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.0
+python-magic==0.4.27
 python-multipart==0.0.20
 pytz==2025.2
 PyYAML==6.0.2
@@ -111,4 +113,3 @@ watchfiles==1.0.5
 wcwidth==0.2.13
 websockets==15.0.1
 yfinance==0.2.65
-python-magic==0.4.27

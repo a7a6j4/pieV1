@@ -46,19 +46,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-v1 = "/api/v1"
 
-app.include_router(prefix=v1, router=user.user)
-app.include_router(prefix=v1, router=auth.auth)
-app.include_router(prefix=v1,router=account.account)
-app.include_router(prefix=v1,router=transaction.transaction)
-app.include_router(prefix=v1,router=portfolio.portfolio)
-app.include_router(prefix=v1,router=product.product)
-app.include_router(prefix=v1,router=journal.journal)
-app.include_router(prefix=v1,router=wallet.wallet)
-app.include_router(prefix=v1,router=deposit.deposit)
-app.include_router(prefix=v1,router=advisory.advisory)
-app.include_router(prefix=v1,router=admin.admin)
+app.include_router(prefix="/api/v1", router=user.user)
+app.include_router(prefix="/api/v1", router=auth.auth)
+app.include_router(prefix="/api/v1",router=account.account)
+app.include_router(prefix="/api/v1",router=transaction.transaction)
+app.include_router(prefix="/api/v1",router=portfolio.portfolio)
+app.include_router(prefix="/api/v1",router=product.product)
+app.include_router(prefix="/api/v1",router=journal.journal)
+app.include_router(prefix="/api/v1",router=wallet.wallet)
+app.include_router(prefix="/api/v1",router=deposit.deposit)
+app.include_router(prefix="/api/v1",router=advisory.advisory)
+app.include_router(prefix="/api/v1",router=admin.admin)
 
 templates = Jinja2Templates(directory="templates")  # 'templates' is your HTML folder
 

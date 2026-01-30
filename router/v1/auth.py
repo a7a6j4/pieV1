@@ -86,9 +86,9 @@ async def verifyAccessToken(security_scopes: SecurityScopes, encoded_jwt = Secur
             )
     return payload
 
-async def verifyUserAccess(encoded_jwt = Security(verifyAccessToken, scopes=["createPassword", "fullAccess", "createAccount"])):
+async def verifyUserAccess(payload = Security(verifyAccessToken, scopes=["createPassword", "fullAccess", "createAccount"])):
 
-    user = db.execute(select(User).where(User.email == encoded_jwt.get('username'))).scalar_one_or_none()
+    user = db.execute(select(User).where(User.email == payload.get('username'))).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User does not exist")
     return user
@@ -135,10 +135,10 @@ async def verifyOtp(scopes: SecurityScopes, otp = Body(..., embed=True), encoded
 @auth.post("", response_model=schemas.SigninTokenResponse)
 async def accessToken(
     db: db, 
-    credential: Annotated[HTTPBasicCredentials, Depends(security)],
+    credentials: Annotated[dict, Body(..., embed=False)],
 ):
     
-    user = db.execute(select(User).where(User.email == credential.username)).scalar_one_or_none()
+    user = db.execute(select(User).where(User.email == credentials.get('username'))).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not Authorized")
 
@@ -147,12 +147,11 @@ async def accessToken(
             data={'username': user.email, "scope": schemas.AccessLimit.PASSWORD.value}, expires_delta=timedelta(seconds=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"])
         )
         return schemas.SigninTokenResponse(token=create_password_token,token_type="bearer", expires_in=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"], limit=schemas.AccessLimit.PASSWORD)
+    
+    check_password = verify_hash(credentials.get('password'), user.password)
 
-    check_user = secrets.compare_digest(credential.username.encode('utf-8'), user.email.encode('utf-8'))
-    check_password = verify_hash(credential.password.encode('utf-8'), user.password.encode('utf-8'))
-
-    if not check_user or not check_password:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
+    if not check_password:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Incorrect username or password")
     
     access_token_expires = timedelta(seconds=schemas.opr[schemas.AccessLimit.LOGIN.value]["seconds"])
     access_token = createToken(
@@ -200,13 +199,6 @@ async def signupotp(userData: schemas.SignupCreate, db: db):
     
     return await sendOtp(data=userData.model_dump(), type=schemas.OtpType.SIGNUP)
 
-@auth.post("/reset-password", response_model=schemas.TokenResponse)
-async def resetPassword(db: db, email = Body(..., embed=True)):
-    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User does not exist")
-    return await sendOtp(data={"email": email}, type=schemas.OtpType.RESET_PASSWORD)
-
 async def getActiveUser(db: db, payload = Security(verifyAccessToken)):
 
     user = db.execute(select(User).where(User.email == payload.get('username'))).scalar_one_or_none()
@@ -223,6 +215,15 @@ async def checkAdvisoryPermission(db: db, user: Annotated[User, Depends(getActiv
     if user.tier < 3:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User does not have advisory permission")
     return user
+
+@auth.post("/reset-password", response_model=schemas.TokenResponse)
+async def resetPassword(db: db, email = Body(..., embed=True)):
+    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    if user:
+        create_password_token = createToken(
+            data={'username': user.email, "scope": schemas.AccessLimit.PASSWORD.value}, expires_delta=timedelta(seconds=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"])
+        )
+        return schemas.TokenResponse(token=create_password_token, token_type="bearer", expires_in=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"], limit=schemas.AccessLimit.PASSWORD)
 
 @auth.post("/admin", response_model=schemas.SigninTokenResponse)
 async def getAdminAccess(
@@ -304,3 +305,4 @@ async def readUser(
         payload = await decodeTokenScopes(adminToken, scopes)
         
     return payload
+
