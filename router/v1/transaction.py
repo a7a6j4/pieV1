@@ -1,5 +1,4 @@
 import asyncio
-from turtle import delay
 from model import PortfolioTransaction
 import uuid
 from fastapi import APIRouter, Depends, status, HTTPException, Query, Security
