@@ -1,4 +1,6 @@
 from ctypes import Union
+from click import File
+from fastapi import UploadFile
 from pydantic import BaseModel, model_validator, field_validator, Field as field
 from typing import Optional, List, Annotated
 from datetime import datetime, date
@@ -965,7 +967,7 @@ opr = {
         "subject": "Create Password OTP"
     },
     "resetPassword" : {
-        "seconds": 300,
+        "seconds": 600,
         "name": "Reset Password",
         "subject": "Reset Password OTP"
     },
@@ -1035,8 +1037,7 @@ class Address(BaseModel):
     city: str
     state: NigeriaState
     country: Country = field(default=Country.NG)
-    postalCode: str
-
+    postalCode: Optional[str] = None
 
 class AnchorKycLevel2(BaseModel):
     dateOfBirth: datetime
@@ -1060,17 +1061,31 @@ class AddressProofType(enum.Enum):
     UTILITY_BILL = "UTILITY_BILL"
     ADDRESS_PROOF = "ADDRESS_PROOF"
 
-class KycCreate(BaseModel):
-    maidenName: str
-    address: Address
-    dateOfBirth: datetime
-    gender: Gender = field(description="Gender must be either Male or Female")
-    bvn: str = field(max_length=11, min_length=11, description="BVN must be 11 digits")
+class kycIdentityCreate(BaseModel):
     idType: IDType
     idNumber: str
-    idExpirationDate: datetime
-    addressProofType: AddressProofType
-    taxId: Optional[str] = None
+    idExpirationDate: Optional[datetime] = None
+
+class NextOfKinCreate(BaseModel):
+    firstName: str
+    lastName: str
+    middleName: Optional[str] = None
+    phoneNumber: str
+    email: str
+    relationship: str
+
+class KycBvnCreate(BaseModel):
+    bvn: str = field(max_length=11, min_length=11, description="BVN must be 11 digits")
+    dateOfBirth: datetime = field(description="Date of birth must be in the format YYYY-MM-DD")
+
+class KycCreate(BaseModel):
+    maidenName: str
+    middleName: Optional[str] = None
+    nextOfKin: NextOfKinCreate
+    gender: Gender = field(description="Gender must be either Male or Female")
+    identity: kycIdentityCreate
+    # addressProofType: Optional[AddressProofType] = None
+    # taxId: Optional[str] = None
 
 class AnchorKycCreate(KycCreate):
     firstName: str
@@ -1113,3 +1128,19 @@ class WalletGroupCreate(BaseModel):
   description: Optional[str] = None
   currency: Currency
   receivableAccountId: int
+
+
+class AnchorBalanceData(BaseModel):
+  availableBalance: float
+  ledgerBalance: float
+  hold: float
+  pending: float
+
+  class Config:
+    from_attributes = True
+
+class AnchorBalanceResponse(BaseModel):
+  data: AnchorBalanceData
+
+  class Config:
+    from_attributes = True

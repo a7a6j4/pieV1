@@ -108,9 +108,9 @@ async def uploadAnchorCustomerDocument(anchor_customer_id: str, document_id: str
   response = requests.post(request_url, files=file_data, headers=headers)
   return response
 
-async def createAnchorDepositAccount(anchor_customer_id: str, mode: str):
+async def createAnchorDepositAccount(anchor_customer_id: str):
 
-  request_url = f"{url_sandbox if mode == schemas.AnchorMode.SANDBOX else url_live}/accounts" 
+  request_url = f"{url_sandbox}/accounts" 
 
   payload = { "data": {
         "attributes": { "productName": "SAVINGS" },
@@ -123,30 +123,29 @@ async def createAnchorDepositAccount(anchor_customer_id: str, mode: str):
   headers = {
     "accept": "application/json",
     "content-type": "application/json",
-    "x-anchor-key": anchor_api_key_sandbox if mode == schemas.AnchorMode.SANDBOX else anchor_api_key_live
+    "x-anchor-key": anchor_api_key_sandbox
 }
 
   response = requests.post(request_url, json=payload, headers=headers)
-  return response.json()
+  return response
 
+async def getAnchorDepositAccount(anchor_customer_id: str):
+  request_url = f"{url_sandbox}/accounts"
+  headers = {
+    "accept": "application/json",
+    "content-type": "application/json",
+    "x-anchor-key": anchor_api_key_sandbox
+  }
+  response = requests.get(request_url, headers=headers)
+  return response
 
-#   url = "https://api.sandbox.getanchor.co/api/v1/accounts"
-
-# payload = { "data": {
-#         "attributes": {
-#             "customer": {
-#                 "id": "17597958382113-anc_ind_cst",
-#                 "type": "IndividualCustomer"
-#             },
-#             "currency": "NGN",
-#             "productName": "sfdfsd"
-#         },
-#         "type": "ElectronicAccount"
-#     } }
-# headers = {
-#     "accept": "application/json",
-#     "content-type": "application/json",
-#     "x-anchor-key": "hfVz5.1f836e3cf846c4fb0695e31cf2a4f2eff8869c878f950a65385658c5aca2e0834f064e545e355d852b734b0b6918e88dd0d2"
-# }
-
-# response = requests.post(url, json=payload, headers=headers)
+async def getAnchorBalance(account_number: str):
+  
+  request_url = f"{url_sandbox}/accounts/balance/{account_number}"
+  headers = {
+    "accept": "application/json",
+    "content-type": "application/json",
+    "x-anchor-key": anchor_api_key_sandbox
+  }
+  response = requests.get(request_url, headers=headers)
+  return response

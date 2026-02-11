@@ -4,12 +4,13 @@ from sqlalchemy.orm import Session
 from database import db
 import model
 import schemas
+from utils.anchor import getAnchorBalance
 from ..v1 import auth
 from typing import Annotated, Optional
 from sqlalchemy import select, func, case
 from datetime import datetime
 from ..v1.journal import prepareJournal
-from ..v1.user import getUser
+from ..v1.user import checkKycVerification, getUser
 
 wallet = APIRouter(
     prefix="/wallet",
@@ -20,7 +21,7 @@ wallet = APIRouter(
 async def createWallet(
   db: db,
   walletGroupId: int,
-  user: Annotated[model.User, Security(getUser, scopes=["createUser"])]):
+  user: Annotated[model.User, Depends(checkKycVerification)]):
 
   wallet = db.execute(select(model.Wallet).where(model.Wallet.userId == user.id, model.Wallet.walletGroupId == walletGroupId)).scalar_one_or_none()
 
@@ -36,15 +37,17 @@ async def createWallet(
 @wallet.get('/')
 async def getUserWallet(
   db: db,
-  user: Annotated[model.User, Security(getUser, scopes=["readUser"])],
-  walletId: int,
+  kyc: Annotated[model.Kyc, Depends(checkKycVerification)],
+  # walletId: int,
   ):
 
-  wallet = db.execute(select(model.Wallet).where(model.Wallet.userId == user.id, model.Wallet.id == walletId)).scalar_one_or_none()
-  
-  if wallet is None:
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wallet not found")
-  return wallet
+  # wallet = db.execute(select(model.Wallet).where(model.Wallet.userId == user.id, model.Wallet.id == walletId)).scalar_one_or_none()
+
+  anchor_account = db.execute(select(model.AnchorAccount).join(model.AnchorUser).where(model.AnchorUser.userId == kyc.userId)).scalar_one_or_none()
+  if anchor_account is None:
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anchor account not found")
+
+  return anchor_account
 
 class WalletBalanceStore(BaseModel):
   balance: float
@@ -53,34 +56,41 @@ class WalletBalanceStore(BaseModel):
 @wallet.get('/balance')
 async def getWalletBalance(
   db: db,
-  wallet: Annotated[model.Wallet, Depends(getUserWallet)],
+  wallet: Annotated[model.AnchorAccount, Depends(getUserWallet)],
   last_request: Optional[datetime] = None
 ):
 
-  net_inflow_query = (
-    select(
-        func.sum(
-            case(
-                (model.WalletTransaction.type == schemas.TransactionType.INVESTMENT.name, -model.WalletTransaction.amount),
-                (model.WalletTransaction.type == schemas.TransactionType.LIQUIDATION.name, model.WalletTransaction.amount),
-                (model.WalletTransaction.type == schemas.TransactionType.FEE.name, -model.WalletTransaction.amount),
-                (model.WalletTransaction.type == schemas.TransactionType.TAX.name, -model.WalletTransaction.amount),
-                (model.WalletTransaction.type == schemas.TransactionType.DEPOSIT.name, model.WalletTransaction.amount),
-                (model.WalletTransaction.type == schemas.TransactionType.WITHDRAWAL.name, -model.WalletTransaction.amount),
-                else_=0
-            )
-        ).label("net_inflow")
-    )
-    .where(model.WalletTransaction.walletId == wallet.id, model.WalletTransaction.status == schemas.TransactionStatus.COMPLETED)
-)
+  balance_request = await getAnchorBalance(account_number=wallet.depositAccountId)
+  if balance_request.status_code != 200:
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=balance_request.json())
 
-  net_inflow = db.execute(net_inflow_query).scalar()
-  net_inflow = 0 if net_inflow is None else net_inflow
-  return {
-    "balance": float(net_inflow / 100),
-    "last_request": datetime.now(),
-    "wallet": wallet,
-  }
+  balance = schemas.AnchorBalanceResponse(**balance_request.json())
+  return balance
+
+#   net_inflow_query = (
+#     select(
+#         func.sum(
+#             case(
+#                 (model.WalletTransaction.type == schemas.TransactionType.INVESTMENT.name, -model.WalletTransaction.amount),
+#                 (model.WalletTransaction.type == schemas.TransactionType.LIQUIDATION.name, model.WalletTransaction.amount),
+#                 (model.WalletTransaction.type == schemas.TransactionType.FEE.name, -model.WalletTransaction.amount),
+#                 (model.WalletTransaction.type == schemas.TransactionType.TAX.name, -model.WalletTransaction.amount),
+#                 (model.WalletTransaction.type == schemas.TransactionType.DEPOSIT.name, model.WalletTransaction.amount),
+#                 (model.WalletTransaction.type == schemas.TransactionType.WITHDRAWAL.name, -model.WalletTransaction.amount),
+#                 else_=0
+#             )
+#         ).label("net_inflow")
+#     )
+#     .where(model.WalletTransaction.walletId == wallet.id, model.WalletTransaction.status == schemas.TransactionStatus.COMPLETED)
+# )
+
+#   net_inflow = db.execute(net_inflow_query).scalar()
+#   net_inflow = 0 if net_inflow is None else net_inflow
+#   return {
+#     "balance": float(net_inflow / 100),
+#     "last_request": datetime.now(),
+#     "wallet": wallet,
+#   }
 
 @wallet.get('/transactions')
 async def getWalletTransactions(

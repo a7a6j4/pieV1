@@ -31,7 +31,9 @@ class Settings(BaseSettings):
     TIINGO_API_KEY: str
     FINHUB_API_KEY: str
     TWELVEDATA_API_KEY: str
-
+    PREMBLY_API_KEY_SANDBOX: str
+    PREMBLY_API_KEY_LIVE: str
+    
 
 settings = Settings(
   _env_file='.env',

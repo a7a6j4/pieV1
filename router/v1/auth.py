@@ -93,52 +93,41 @@ async def verifyUserAccess(payload = Security(verifyAccessToken, scopes=["create
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User does not exist")
     return user
 
-
-@auth.post("/otp", response_model=schemas.TokenResponse)
-async def verifyOtpToken(scopes: SecurityScopes, otp = Body(..., embed=True), encoded_jwt = Depends(otpScheme)):
-
-    if scopes.scopes:
-        authenticate_value = f'Bearer scope="{scopes.scope_str}"'
-    else:
-        authenticate_value = "Bearer"
-
-    payload = await decodeToken(encoded_jwt)
-    if payload.get('otp') != otp:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP", headers={"WWW-Authenticate": authenticate_value})
-    for scope in scopes.scopes:
-        if payload.get('scope', "") != scope:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Insufficient Permission", headers={"WWW-Authenticate": authenticate_value})
-
-    access_token_expires = timedelta(seconds=schemas.opr[payload.get('scope', "")]["seconds"])
-    access_token = createToken(
-        data={'email': payload.get('email'), "scope": payload.get('scope', "")}, expires_delta=access_token_expires 
-    )
-    return schemas.TokenResponse(token=access_token, token_type="bearer", expires_in=schemas.opr[payload.get('scope', "")]["seconds"], limit=payload.get('scope', ""))
-
 async def verifyOtp(scopes: SecurityScopes, otp = Body(..., embed=True), encoded_jwt = Depends(otpScheme)):
 
     if scopes.scopes:
         authenticate_value = f'Bearer scope="{scopes.scope_str}"'
     else:
         authenticate_value = "Bearer"
-    
-    payload = await decodeToken(encoded_jwt)
-    if payload.get('otp') != otp:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid OTP", headers={"WWW-Authenticate": authenticate_value})
-    for scope in scopes.scopes:
-        if payload.get('scope', "") != scope:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Insufficient Permission", headers={"WWW-Authenticate": authenticate_value})
 
-    print(payload)
+    payload = await decodeToken(encoded_jwt)
+    otp_check = verify_hash(otp, payload.get('otp'))
+    if not otp_check:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid OTP", headers={"WWW-Authenticate": authenticate_value})
+    for scope in payload.get('scope', "").split(","):
+        if scope not in scopes.scopes:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient Permission", headers={"WWW-Authenticate": authenticate_value})
+
     return payload
+
+@auth.post("/otp", response_model=schemas.TokenResponse)
+async def verifyOtpResponse(encoded_jwt =Security(verifyOtp, scopes=[schemas.OtpType.RESET_PASSWORD.value, schemas.OtpType.SIGNUP.value, schemas.OtpType.CREATE_PASSWORD.value])):
+    
+    access_token_expires = timedelta(seconds=schemas.opr[encoded_jwt.get('scope', "")]["seconds"])
+    access_token = createToken(
+        data={'email': encoded_jwt.get('email'), "scope": encoded_jwt.get('scope', "")}, expires_delta=access_token_expires 
+    )
+    return schemas.TokenResponse(token=access_token, token_type="bearer", expires_in=schemas.opr[encoded_jwt.get('scope', "")]["seconds"], limit=encoded_jwt.get('scope', ""))
 
 @auth.post("", response_model=schemas.SigninTokenResponse)
 async def accessToken(
     db: db, 
     credentials: Annotated[dict, Body(..., embed=False)],
 ):
+
+    email = credentials.get('username').lower()
     
-    user = db.execute(select(User).where(User.email == credentials.get('username'))).scalar_one_or_none()
+    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not Authorized")
 
@@ -163,28 +152,16 @@ async def sendOtp(data: dict, type: schemas.OtpType):
 
     single_digits = [str(randint(0, 9)) for _ in range(5)]  # Convert to strings
     otp = ''.join(single_digits)
+
+    hashed_otp = hashpass(otp)
     email_response = await sendOtpEmail(otp=otp, email=data.get('email'), otpType=type)
     if email_response not in [200, 201]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to send OTP")
     seconds = schemas.opr.get(type.value).get("seconds")
     expires = timedelta(seconds=int(seconds))
-    payload = {"otp": otp, **data, "scope": type.value}
+    payload = {"otp": hashed_otp, **data, "scope": type.value}
     token = createToken(data=payload, expires_delta=expires)
     return schemas.TokenResponse(token=token, token_type="bearer", expires_in=seconds)
-
-@auth.post("/email")
-async def checkUserEmail(db: db, email = Body(..., embed=True)):
-    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User does not exist")
-
-    if not user.is_active:
-        create_password_token = createToken(
-            data={'username': user.email, "scope": schemas.AccessLimit.PASSWORD.value}, expires_delta=timedelta(seconds=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"])
-        )
-        return schemas.SigninTokenResponse(token=create_password_token,token_type="bearer", expires_in=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"], limit=schemas.AccessLimit.PASSWORD)
-    else:
-        return True
 
 @auth.post("/signup", response_model=schemas.TokenResponse)
 async def signupotp(userData: schemas.SignupCreate, db: db):
@@ -197,7 +174,10 @@ async def signupotp(userData: schemas.SignupCreate, db: db):
     if phone_number is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone number already registered")
     
-    return await sendOtp(data=userData.model_dump(), type=schemas.OtpType.SIGNUP)
+    data = userData.model_dump()
+    data['email'] = data['email'].lower()
+    
+    return await sendOtp(data=data, type=schemas.OtpType.SIGNUP)
 
 async def getActiveUser(db: db, payload = Security(verifyAccessToken)):
 
@@ -220,10 +200,7 @@ async def checkAdvisoryPermission(db: db, user: Annotated[User, Depends(getActiv
 async def resetPassword(db: db, email = Body(..., embed=True)):
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     if user:
-        create_password_token = createToken(
-            data={'username': user.email, "scope": schemas.AccessLimit.PASSWORD.value}, expires_delta=timedelta(seconds=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"])
-        )
-        return schemas.TokenResponse(token=create_password_token, token_type="bearer", expires_in=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"], limit=schemas.AccessLimit.PASSWORD)
+        return await sendOtp(data={'email': user.email}, type=schemas.OtpType.RESET_PASSWORD)
 
 @auth.post("/admin", response_model=schemas.SigninTokenResponse)
 async def getAdminAccess(

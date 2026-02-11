@@ -41,7 +41,7 @@ async def sendEmail(email: str, subject: str, data: dict):
     url = "https://api.brevo.com/v3/smtp/email"
     headers = {
         "accept": "application/json",
-        "api-key": settings.BREVO_API_KEY,
+        "api-key": api_key,
         "content-type": "application/json"
     }
     data = {
@@ -56,7 +56,7 @@ async def sendEmail(email: str, subject: str, data: dict):
             }
         ],
         "subject": subject,
-        "htmlContent": data.get('htmlContent', 'empty')
+        "htmlContent": data.get('htmlContent', '')
     }
     response = requests.post(url, headers=headers, json=data)
     return response.status_code

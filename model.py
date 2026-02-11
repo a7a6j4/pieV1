@@ -63,6 +63,8 @@ class User(Base):
     other_names: Mapped[Optional[str]]
     last_name: Mapped[str]
     phone_number: Mapped[str] = mapped_column(unique=True)
+    bvn: Mapped[Optional[str]] = mapped_column(unique=True)
+    dateOfBirth: Mapped[Optional[datetime]]
     tier: Mapped[Optional[int]] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -90,20 +92,45 @@ class UserAddress(Base):
 
     kyc: Mapped[Optional["Kyc"]] = relationship(back_populates="address")
 
+class kycDocument(Base):
+    __tablename__ = "kycdocument"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kycId: Mapped[int] = mapped_column(ForeignKey("kyc.id"))
+    type: Mapped[schemas.UserDocumentType]
+    valid: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+
+    kyc: Mapped["Kyc"] = relationship()
+
+    __table_args__ = (UniqueConstraint("kycId", "type"),)
+
+class kycStatus(Base):
+    __tablename__ = "kycstatus"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kycId: Mapped[int] = mapped_column(ForeignKey("kyc.id"))
+    identity: Mapped[bool] = mapped_column(default=False)
+    address: Mapped[bool] = mapped_column(default=False)
+
+
 class Kyc(Base):
     __tablename__ = "kyc"
     id: Mapped[int] = mapped_column(primary_key=True)
-    userId: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    dateOfBirth: Mapped[datetime]
-    maidenName: Mapped[str]
-    gender: Mapped[schemas.Gender]
-    bvn: Mapped[str] = mapped_column(unique=True)
-    idType: Mapped[schemas.IDType]
-    idNumber: Mapped[str]
-    idExpirationDate: Mapped[datetime]
-    addressProofType: Mapped[schemas.AddressProofType]
+    userId: Mapped[int] = mapped_column(ForeignKey("user.id"), unique=True)
+    gender: Mapped[Optional[schemas.Gender]]
+    maidenName: Mapped[Optional[str]]
+    idType: Mapped[Optional[schemas.IDType]]
+    idNumber: Mapped[Optional[str]]
+    idExpirationDate: Mapped[Optional[datetime]]
+    addressProofType: Mapped[Optional[schemas.AddressProofType]]
     taxId: Mapped[Optional[str]]
+    submitted: Mapped[bool] = mapped_column(default=False)
     verified: Mapped[bool] = mapped_column(default=False)
+    identityVerified: Mapped[Optional[bool]] = mapped_column(default=False)
+    addressVerified: Mapped[Optional[bool]] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
@@ -111,25 +138,57 @@ class Kyc(Base):
 
     user: Mapped["User"] = relationship()
     address: Mapped["UserAddress"] = relationship(back_populates="kyc")
+    status: Mapped["kycStatus"] = relationship(lazy='selectin')
+    nextOfKin: Mapped[Optional["NextOfKin"]] = relationship(back_populates="kyc")
 
-    __table_args__ = (UniqueConstraint("userId", "bvn"), 
-    UniqueConstraint("idType", "idNumber"), 
+    __table_args__ = (UniqueConstraint("userId", "idType", "idNumber"),
     UniqueConstraint("userId", "taxId"), )
+
+class NextOfKin(Base):
+    __tablename__ = "nextofkin"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kycId: Mapped[int] = mapped_column(ForeignKey("kyc.id"))
+    firstName: Mapped[str]
+    lastName: Mapped[str]
+    middleName: Mapped[Optional[str]]
+    phoneNumber: Mapped[str]
+    email: Mapped[str]
+    relationship: Mapped[str]
+
+    kyc: Mapped["Kyc"] = relationship(back_populates="nextOfKin")
 
 class AnchorUser(Base):
     __tablename__ = "anchoruser"
     id: Mapped[int] = mapped_column(primary_key=True)
     userId: Mapped[int] = mapped_column(ForeignKey("user.id"))
     customerId: Mapped[str] = mapped_column(unique=True)
-    depositAccountId: Mapped[Optional[str]] = mapped_column(unique=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
     )
 
     user: Mapped["User"] = relationship(back_populates="anchor_user")
+    bankAccount: Mapped[Optional["AnchorAccount"]] = relationship(back_populates="anchorUser", lazy='selectin')
 
-    __table_args__ = (UniqueConstraint("userId", "customerId"),UniqueConstraint("userId", "depositAccountId"), UniqueConstraint("customerId", "depositAccountId"))
+    __table_args__ = (UniqueConstraint("userId", "customerId"),)
+
+class AnchorAccount(Base):
+    __tablename__ = "anchoraccount"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    anchorUserId: Mapped[int] = mapped_column(ForeignKey("anchoruser.id"))
+    depositAccountId: Mapped[str] = mapped_column(unique=True)
+    accountNumber: Mapped[str]
+    bank: Mapped[str]
+    name: Mapped[str]
+    bankCode: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+
+    anchorUser: Mapped["AnchorUser"] = relationship(back_populates="bankAccount", lazy='selectin')
+
+    __table_args__ = (UniqueConstraint("anchorUserId", "accountNumber"), UniqueConstraint("anchorUserId", "depositAccountId"))
 
 class RiskProfile(Base):
     __tablename__ = "riskprofile"

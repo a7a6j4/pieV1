@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 from typing import Annotated
-from router.v1 import user, auth, account, transaction, portfolio, product, journal, wallet, deposit, advisory, admin
+from router.v1 import user, auth, account, transaction, portfolio, product, journal, wallet, deposit, advisory, admin, webhooks
 import os
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from database import create_db_and_tables, db
@@ -58,6 +58,7 @@ app.include_router(prefix="/api/v1",router=wallet.wallet)
 app.include_router(prefix="/api/v1",router=deposit.deposit)
 app.include_router(prefix="/api/v1",router=advisory.advisory)
 app.include_router(prefix="/api/v1",router=admin.admin)
+app.include_router(prefix="/api/v1",router=webhooks.webhooks)
 
 templates = Jinja2Templates(directory="templates")  # 'templates' is your HTML folder
 
