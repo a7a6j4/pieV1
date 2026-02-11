@@ -65,11 +65,10 @@ async def set_password(db: db, password = Body(..., embed=True), payload = Secur
 
 @user.post("/change-password", status_code=status.HTTP_201_CREATED, response_model=schemas.TokenResponse)
 async def changePassword(db: db, user: Annotated[model.User, Depends(auth.getActiveUser)]):
-    # create a new password token
-    create_password_token = auth.createToken(
-        data={'username': user.email, "scope": schemas.AccessLimit.PASSWORD.value}, expires_delta=timedelta(seconds=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"])
-    )
-    return schemas.TokenResponse(token=create_password_token, token_type="bearer", expires_in=schemas.opr[schemas.AccessLimit.PASSWORD.value]["seconds"], limit=schemas.AccessLimit.PASSWORD)
+
+    # send otp to user
+    otp = await auth.sendOtp(data={'email': user.email}, type=schemas.OtpType.RESET_PASSWORD)
+    return otp
 
 @user.patch("/password", status_code=status.HTTP_201_CREATED)
 async def updatePassword(db: db, new_password = Body(..., embed=True), token = Security(auth.verifyAccessToken, scopes=[schemas.OtpType.RESET_PASSWORD.value])):

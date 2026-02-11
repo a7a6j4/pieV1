@@ -12,4 +12,5 @@ venv/
 dist/
 build/
 uploads/
+uploads/*
 alembic/versions/
