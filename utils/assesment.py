@@ -14,7 +14,7 @@ async def runAssesment(data: schemas.RiskProfileSchema):
     if key == "household_income":
       if value == schemas.HouseholdIncome.SINGLE:
         total_score += 1
-      elif value == schemas.HouseholdIncome.DOUBLE:
+      elif value == schemas.HouseholdIncome.DOUBLED:
         total_score += 3
     
     if key == "primary_provider":

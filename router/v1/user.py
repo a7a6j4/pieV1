@@ -272,9 +272,6 @@ async def createUserKyc(db: db, user: Annotated[model.User, Security(checkKycSta
     kyc.idExpirationDate = data.identity.idExpirationDate
     kyc.nextOfKin = model.NextOfKin(**data.nextOfKin.model_dump(), kycId=kyc.id)
 
-    if data.middleName:
-        db.execute(update(model.User).where(model.User.id == user.id).values(other_names=data.middleName))
-
     db.add(kyc)
     # db.add(user_update)
     db.commit()

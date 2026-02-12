@@ -1080,7 +1080,6 @@ class KycBvnCreate(BaseModel):
 
 class KycCreate(BaseModel):
     maidenName: str
-    middleName: Optional[str] = None
     nextOfKin: NextOfKinCreate
     gender: Gender = field(description="Gender must be either Male or Female")
     identity: kycIdentityCreate
