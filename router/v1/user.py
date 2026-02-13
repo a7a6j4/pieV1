@@ -232,12 +232,17 @@ async def validateKycDocumentFile(file: UploadFile):
 
 @user.post("/kyc/document/{type}")
 async def uploadKycDocuments(db: db, type: schemas.UserDocumentType, user: Annotated[model.User, Security(getUserBvn, scopes=["createUser"])], file = Depends(validateKycDocumentFile)):
-    if user.kyc.status.identity:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Identity document already uploaded")
+    
+    if user.kyc is not None:
+        if user.kyc.identityVerified:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Identity document already verified")
 
     file_name = f"{user.id}/kyc/{type.value}"
-    file_path = await upload_file(bucket_name="user", file_object=file.file, file_name=file_name, content_type=file.content_type)
-    user.kyc.status.identity = True
+    try:
+        file_path = await upload_file(bucket_name="user", file_object=file.file, file_name=file_name, content_type=file.content_type)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to upload file: " + str(e))
+
     db.commit()
     return {"message": "File uploaded successfully", "file_path": file_path}
 
