@@ -201,6 +201,8 @@ async def resetPassword(db: db, email = Body(..., embed=True)):
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     if user:
         return await sendOtp(data={'email': user.email}, type=schemas.OtpType.RESET_PASSWORD)
+    else:
+        raise None
 
 @auth.post("/admin", response_model=schemas.SigninTokenResponse)
 async def getAdminAccess(

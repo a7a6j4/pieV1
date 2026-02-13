@@ -197,10 +197,10 @@ async def verifyBvn(db: db, user: Annotated[model.User, Security(getUser, scopes
     if bvn_exists:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="BVN already in use")
 
-    try:
-        selfie_image = await download_s3_object_for_requests(bucket_name="user", file_name=f"{user.id}/kyc/{schemas.UserDocumentType.SELFIE.value}")
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to get selfie image: " + str(e))
+    # try:
+    #     selfie_image = await download_s3_object_for_requests(bucket_name="user", file_name=f"{user.id}/kyc/{schemas.UserDocumentType.SELFIE.value}")
+    # except Exception as e:
+    #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to get selfie image: " + str(e))
 
     kyc_response = await prembly.bvnAdvancedVerification(data.bvn)
     if kyc_response.status_code != 200:
@@ -259,7 +259,7 @@ async def createUserKyc(db: db, user: Annotated[model.User, Security(checkKycSta
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to get identity document: " + str(e))
     
-    if data.identity.idType == schemas.IDType.DRIVERS_LICENSE or data.identity.idType == schemas.IDType.VOTERS_CARD:
+    if data.identity.idType == schemas.IDType.DRIVERS_LICENSE or data.identity.idType == schemas.IDType.VOTERS_CARD or data.identity.idType == schemas.IDType.NATIONAL_ID:
         try:
             back_document = await download_s3_object_for_requests(bucket_name="user", file_name=f"{user.id}/kyc/{schemas.UserDocumentType.BACK_ID.value}")
         except Exception as e:
