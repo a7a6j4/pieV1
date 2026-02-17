@@ -26,47 +26,72 @@ portfolio = APIRouter(
     tags=["portfolio"]
 )
 
-@portfolio.get("/")
+@portfolio.get("")
 async def getPortfolio(
     portfolioId: int, 
     db: db, 
     user: Annotated[model.User, Security(getUser, scopes=["readUser"])]):
 
-  portfolio = db.execute(select(model.Portfolio).where(model.Portfolio.userId == user.id, model.Portfolio.id == portfolioId)).scalar_one_or_none()
+    portfolio = db.execute(select(model.Portfolio).where(model.Portfolio.userId == user.id, model.Portfolio.id == portfolioId)).scalar_one_or_none()
 
-  if not portfolio:
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
-  return portfolio
+    if not portfolio:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio not found")
+
+    return portfolio
 
 @portfolio.get("/all")
 async def getAllPortfolios(db: db, user: Annotated[model.User, Security(getUser, scopes=["readUser"])]):
 
     return user.portfolios
 
-@portfolio.post('/', response_model=schemas.PortfolioSchema)
+@portfolio.post("", status_code=status.HTTP_201_CREATED)
 async def createPortfolio(
    db: db,
    type: schemas.PortfolioType,
    user = Security(getUser, scopes=["createUser"]),
-   attributes: Annotated[Optional[schemas.PortfolioCreate], Body()] = None):
+   attributes: schemas.PortfolioCreate = Body()
+   ):
 
-   if type in [schemas.PortfolioType.EMERGENCY, schemas.PortfolioType.LIQUID]:
-    single_portfolio = db.execute(select(model.Portfolio).where(model.Portfolio.userId == user.id, model.Portfolio.type == type)).scalar_one_or_none()
-    if single_portfolio:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{type.value} portfolio already exists")
+    if type in [schemas.PortfolioType.EMERGENCY, schemas.PortfolioType.LIQUID]:
+        raise HTTPException(status_code=status.HTTP_412_PRECONDITION_FAILED, detail=f"invalid portfolio type: cannot create liquid or emergency portfolios here")
 
+    if type == schemas.PortfolioType.GROWTH or type == schemas.PortfolioType.TARGET or type == schemas.PortfolioType.INVEST:
+        if attributes.duration is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"duration attribute is required in request body for {type.value} portfolios")
+
+    description = attributes.description if attributes.description is not None and attributes.description != "" else schemas.default_description_map.get(type, None)
+    
     portfolio = model.Portfolio(
         userId=user.id, 
         type=type, 
-        description=f"{type.value} portfolio", 
-        risk=1 if type == schemas.PortfolioType.EMERGENCY or type == schemas.PortfolioType.LIQUID else attributes.risk,
-        duration=1 if type == schemas.PortfolioType.EMERGENCY or type == schemas.PortfolioType.LIQUID else attributes.duration)
+        description=description, 
+        risk=attributes.risk,
+        duration=attributes.duration)
+    db.add(portfolio)
 
     if attributes.target is not None:
-        target = model.Target(**attributes.target.model_dump())
+        target = model.PortfolioTarget(**attributes.target.model_dump())
         portfolio.target = target
 
-    db.add(portfolio)
+    if attributes.income is not None:
+        if type != schemas.PortfolioType.INCOME:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{type.value} cannot have an income a")
+        income = model.PortfolioIncome(**attributes.income.model_dump())
+        income.startDate = datetime.now()
+
+        nextdate_map = {
+            schemas.Frequency.MONTHLY: timedelta(days=30),
+            schemas.Frequency.BIMONTHLY: timedelta(days=60),
+            schemas.Frequency.QUARTERLY: timedelta(days=90),
+            schemas.Frequency.SEMIANNUALLY: timedelta(days=180),
+            schemas.Frequency.ANNUALLY: timedelta(days=365),
+        }
+
+        income.nextIncomeDate = income.startDate + nextdate_map[attributes.income.frequency]
+        portfolio.income = income
+    
+    # Define portfolio strategic asset allocation
+
     db.commit()
     db.refresh(portfolio)
     return portfolio
@@ -104,9 +129,12 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
     transactions = select(model.DepositTransaction).where(model.DepositTransaction.portfolioId == portfolio.id).subquery()
     deposits = db.execute(select(model.PortfolioDeposit, transactions).join_from(transactions, model.PortfolioDeposit, model.PortfolioDeposit.transactionId == transactions.c.id).where(model.PortfolioDeposit.closed == False, model.PortfolioDeposit.maturityDate >= datetime.now())).mappings().all()
 
+    target = {"amount": portfolio.target.amount if portfolio.target else None, "currency": portfolio.target.currency if portfolio.target else None} if portfolio.target else None
+
     return {
         "variable_assets": map_variable_assets,
         "deposits": deposits,
+        "target": target,
     }
     
 @portfolio.get("/deposit-value")
@@ -150,8 +178,8 @@ async def getPortfolioValue(
 ):
 
     assets_list = []
-    print(assets["variable_assets"])
-    for asset in assets["variable_assets"]:
+
+    for asset in assets.get("variable_assets", []):
         if asset["Variable"].productGroup.productClass == schemas.ProductClass.EQUITY and asset["Variable"].productGroup.market == schemas.Country.NG:
             value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == asset["Variable"].id).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
             price = value.price / 100
@@ -182,7 +210,7 @@ async def getPortfolioValue(
         elif asset["Variable"].productGroup.productClass == schemas.ProductClass.MUTUAL_FUND:
             pass
 
-    for deposit in assets["deposits"]:
+    for deposit in assets.get("deposits", []):
         current_value = await getNGDepositValue(deposit["PortfolioDeposit"].id, db)
         invested_amount = deposit["amount"] / 100
         performance = (current_value["current_value"] - invested_amount) / invested_amount
@@ -223,13 +251,32 @@ async def getPortfolioValue(
     except:
         ngn_performance = 0
 
-    return {
-        "total_value_ngn": ngn_variable_value + ngn_deposits_value,
-        "total_value_usd": usd_variable_value + usd_deposits_value,
-        "total_performance_ngn": ngn_performance,
-        "total_performance_usd": usd_performance,
+    total_value_ngn = ngn_variable_value + ngn_deposits_value
+    total_value_usd = usd_variable_value + usd_deposits_value
+
+    response_data = {
+        "totalValueNgn": total_value_ngn,
+        "totalValueUsd": total_value_usd,
+        "totalPerformanceNgn": ngn_performance,
+        "totalPerformanceUsd": usd_performance,
         "assets": assets_list,
     }
+
+    if assets.get("target").get("amount", None) is not None:
+
+        target_value = assets.get("target", None).get("amount", 0)
+        target_currency = assets.get("target", None).get("currency", None)
+
+        if target_currency == schemas.Currency.NGN:
+            target_performance = target_value / total_value_ngn if total_value_ngn > 0 else 0
+        elif target_currency == schemas.Currency.USD:
+            target_performance = target_value / total_value_usd if total_value_usd > 0 else 0
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid target currency")
+
+        response_data["targetPerformance"] = target_performance
+
+    return response_data
 
 async def getPortfolioDeposits(
     db: db, 
@@ -297,84 +344,51 @@ async def checkProductFit(
     else:
         return {"fit": True}
 
-@portfolio.post("/attributes")
-async def createAttributes(db: db, attributes: schemas.PortfolioAttributeCreate, portfolio: model.Portfolio = Depends(getPortfolio)):
+@portfolio.post("/objectives", status_code=status.HTTP_201_CREATED)
+async def addPortfolioObjectives(db: db, objectives: schemas.PortfolioObjectiveCreate, portfolio: model.Portfolio = Depends(getPortfolio)):
 
-    updated_attributes = []
+    updated_attributes = {}
 
-    if attributes.target:
+    if objectives.target:
         if portfolio.target is not None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target already exists")
-        target = model.PortfolioTarget(**attributes.target.model_dump())
+        target = model.PortfolioTarget(**objectives.target.model_dump())
         portfolio.target = target
-        updated_attributes.append({"target": {"amount": target.amount, "currency": target.currency, "targetDate": target.targetDate}})
-    if attributes.commitment:
+        updated_attributes["target"] = {"amount": target.amount, "currency": target.currency, "targetDate": target.targetDate}
+    if objectives.income:
+        if portfolio.income is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Income already exists")
+        income = model.PortfolioIncome(**objectives.income.model_dump())
+        income.startDate = datetime.now()
 
-        nextdate_map = {
-            schemas.Frequency.DAILY: timedelta(days=1),
-            schemas.Frequency.WEEKLY: timedelta(days=7),
-            schemas.Frequency.MONTHLY: timedelta(days=30),
-            schemas.Frequency.QUARTERLY: timedelta(days=90),
-            schemas.Frequency.ANNUALLY: timedelta(days=365),
-        }
-        if portfolio.contributionPlan is not None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Commitment already exists")
-        commitment = model.PortfolioContributionPlan(**attributes.commitment.model_dump(), nextContributionDate=attributes.commitment.startDate + nextdate_map[attributes.commitment.frequency])
-        portfolio.contributionPlan = commitment
-        updated_attributes.append({"commitment": {"amount": commitment.amount, "currency": commitment.currency, "frequency": commitment.frequency, "startDate": commitment.startDate, "nextContributionDate": commitment.nextContributionDate}})
-    if attributes.allocation:
-        total_allocation = sum(map(lambda x: x.targetAllocation, attributes.allocation))
-        if total_allocation != 1:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Total TargetAllocation must be 1")
-        if portfolio.allocation is not None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Allocation already exists")
-        for allocation in attributes.allocation:
-            allocation = model.PortfolioAllocation(**allocation.model_dump(), portfolioId=portfolio.id)
-            db.add(allocation)
-            updated_attributes.append({"allocation": {"targetAllocation": allocation.targetAllocation, "productGroupId": allocation.productGroupId}})
+        income.nextIncomeDate = income.startDate + schemas.nextdate_map[objectives.income.frequency]
+        portfolio.income = income
+        updated_attributes["income"] = {"amount": income.amount, "currency": income.currency, "frequency": income.frequency, "startDate": income.startDate, "nextIncomeDate": income.nextIncomeDate}
     
     db.add(portfolio)
     db.commit()
     db.refresh(portfolio)
-    return updated_attributes
+    return {"message": "Objectives created successfully", "objectives": updated_attributes}
 
-@portfolio.put("/attributes")
-async def createAttributes(db: db, attributes: schemas.PortfolioAttributeCreate, portfolio: model.Portfolio = Depends(getPortfolio)):
-  if portfolio.target is None :
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target not found")
-  if portfolio.contributionPlan is None:
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contribution plan not found")
-  if portfolio.allocation is None:
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Allocation not found")
-
-  updated_attributes = []
-
-  if attributes.target:
-    if portfolio.target is None:
-      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target not found")
-    target = db.execute(update(model.PortfolioTarget).values(**attributes.target.model_dump()).where(model.PortfolioTarget.id == portfolio.target.id)).scalar_one_or_none()
-    updated_attributes.append({"target": {"amount": target.amount, "currency": target.currency, "targetDate": target.targetDate}})
-  if attributes.commitment:
-    if portfolio.contributionPlan is None:
-      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contribution plan not found")
-    commitment = db.execute(update(model.PortfolioContributionPlan).values(**attributes.commitment.model_dump()).where(model.PortfolioContributionPlan.id == portfolio.contributionPlan.id)).scalar_one_or_none()
-    updated_attributes.append({"commitment": {"amount": commitment.amount, "currency": commitment.currency, "frequency": commitment.frequency, "startDate": commitment.startDate}})
-  if attributes.allocation:
-    total_allocation = sum(map(lambda x: x.targetAllocation, attributes.allocation))
-    if total_allocation != 1:
-      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Total TargetAllocation must be 1")   
-    for allocation in portfolio.allocation:
-      db.delete(allocation)
-    for allocation in attributes.allocation:
-      allocation = model.PortfolioAllocation(**allocation.model_dump(), portfolioId=portfolio.id)
-      db.add(allocation)
-      updated_attributes.append({"allocation": {"targetAllocation": allocation.targetAllocation, "productGroupId": allocation.productGroupId}})
-
-  db.add(portfolio)
-  db.commit()
-  db.refresh(portfolio)
-  return updated_attributes
+@portfolio.patch("/objectives", status_code=status.HTTP_200_OK)
+async def updatePortfolioObjectives(db: db, objectives: schemas.PortfolioObjectiveCreate, portfolio: model.Portfolio = Depends(getPortfolio)):
+    updated_attributes = {}
     
+    if objectives.target:
+        if portfolio.target is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target not found")
+        target = db.execute(update(model.PortfolioTarget).values(**objectives.target.model_dump()).where(model.PortfolioTarget.id == portfolio.target.id).returning(model.PortfolioTarget)).scalar_one_or_none()
+        updated_attributes["target"] = {"amount": target.amount, "currency": target.currency, "targetDate": target.targetDate}
+    if objectives.income:
+        if portfolio.income is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Income not found")
+        income = db.execute(update(model.PortfolioIncome).values(**objectives.income.model_dump()).where(model.PortfolioIncome.id == portfolio.income.id).returning(model.PortfolioIncome)).scalar_one_or_none()
+        updated_attributes["income"] = {"amount": income.amount, "currency": income.currency, "frequency": income.frequency, "startDate": income.startDate, "nextIncomeDate": income.nextIncomeDate}
+    
+    db.commit()
+    db.refresh(portfolio)
+    return {"message": "Objectives updated successfully", "updated": updated_attributes}
+
 @portfolio.delete("/attributes")
 async def deleteAttributes(db: db, target: bool = Query(False), commitment: bool = Query(False), portfolio: model.Portfolio = Depends(getPortfolio)):
   if portfolio.target is None:

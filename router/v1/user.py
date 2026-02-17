@@ -296,7 +296,7 @@ async def createUserKycAddress(db: db, user: Annotated[model.User, Security(getU
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to get selfie image: " + str(e))
 
-    submitted = db.execute(update(model.Kyc).where(model.Kyc.user_id == user.id).values(submitted=True).returning(model.Kyc)).scalar_one_or_none()
+    submitted = db.execute(update(model.Kyc).where(model.Kyc.userId == user.id).values(submitted=True).returning(model.Kyc)).scalar_one_or_none()
 
     # create anchor customer
     result = await createAnchorCustomer(
@@ -331,6 +331,9 @@ async def createUserKycAddress(db: db, user: Annotated[model.User, Security(getU
         state=data.state.value,
         postalCode=data.postalCode,
     ))
+
+    user_address = model.UserAddress(kycId=user.kyc.id, houseNumber=data.houseNumber, addressLineOne=data.addressLineOne, addressLineTwo=data.addressLineTwo, city=data.city, state=data.state.value, postalCode=data.postalCode)
+    db.add(user_address)
 
     anchor_user = model.AnchorUser(customerId=result.json().get("data").get("id"), userId=user.id)
     db.add(anchor_user)

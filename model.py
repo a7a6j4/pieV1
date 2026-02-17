@@ -381,10 +381,23 @@ class Portfolio(Base):
     # Relationships
     user: Mapped["User"] = relationship(back_populates="portfolios")
     transactions: Mapped[List["PortfolioTransaction"]] = relationship(back_populates="portfolio")
-    target: Mapped[Optional["PortfolioTarget"]] = relationship(back_populates="portfolio")
+    income: Mapped[Optional["PortfolioIncome"]] = relationship(back_populates="portfolio", lazy='selectin')
+    target: Mapped[Optional["PortfolioTarget"]] = relationship(back_populates="portfolio", lazy='selectin')
     contributionPlan: Mapped[Optional["PortfolioContributionPlan"]] = relationship(back_populates="portfolio")
-    allocation: Mapped[Optional["PortfolioAllocation"]] = relationship(back_populates="portfolio")
+    allocation: Mapped[Optional["PortfolioAllocation"]] = relationship(back_populates="portfolio", lazy='selectin')
     stats: Mapped[Optional["PortfolioStats"]] = relationship(back_populates="portfolio")
+
+class PortfolioIncome(Base):
+    __tablename__ = "portfolioincome"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
+    amount: Mapped[int]
+    currency: Mapped[schemas.Currency]
+    frequency: Mapped[schemas.Frequency]
+    startDate: Mapped[datetime]
+    nextIncomeDate: Mapped[datetime]
+    portfolio: Mapped["Portfolio"] = relationship(back_populates="income")
 
 class PortfolioTarget(Base):
     __tablename__ = "portfoliotarget"

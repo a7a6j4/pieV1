@@ -3,7 +3,7 @@ from click import File
 from fastapi import UploadFile
 from pydantic import BaseModel, model_validator, field_validator, Field as field
 from typing import Optional, List, Annotated
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from decimal import Decimal
 import enum
 
@@ -379,6 +379,8 @@ class Frequency(enum.Enum):
     MONTHLY = "monthly"
     QUARTERLY = "quarterly"
     ANNUALLY = "annually"
+    BIMONTHLY = "bimonthly"
+    SEMIANNUALLY = "semiannually"
 
 class VariableType(enum.Enum):
     STOCK = "stock"
@@ -640,12 +642,21 @@ class RiskProfileSchema(RiskProfileBase):
     class Config:
         from_attributes = True
 
+class TargetCreate(BaseModel):
+    amount: float
+    currency: Currency
+    targetDate: Optional[datetime] = None
+
+class IncomeCreate(BaseModel):
+    amount: float
+    currency: Currency
+    frequency: Frequency
+
 class PortfolioBase(BaseModel):
-    type: PortfolioType
     active: bool = True
     closed: bool = False
-    risk: Optional[int] = None
-    duration: Optional[int] = None
+    risk: Optional[int] = 1
+    duration: Optional[int] = 1
     description: Optional[str] = None
 
 class PortfolioSchema(PortfolioBase):
@@ -654,16 +665,15 @@ class PortfolioSchema(PortfolioBase):
     created: datetime
     updated: datetime
 
+    income: Optional[IncomeCreate]
+    target: Optional[TargetCreate]
+
     class Config:
         from_attributes = True
 
 class UserOut(UserSchema):
     portfolios: List[PortfolioSchema]
 
-class TargetCreate(BaseModel):
-    amount: float
-    currency: Currency
-    targetDate: Optional[datetime] = None
 
 class CommitmentCreate(BaseModel):
     amount: float
@@ -675,16 +685,13 @@ class AllocationCreate(BaseModel):
   targetAllocation: float
   productGroupId: int
 
-class PortfolioAttributeCreate(BaseModel):
+class PortfolioObjectiveCreate(BaseModel):
   target: Optional[TargetCreate] = None
-  commitment: Optional[CommitmentCreate] = None
-  allocation: Optional[List[AllocationCreate]] = None
+  income: Optional[IncomeCreate] = None
 
 class PortfolioCreate(PortfolioBase):
-    description: Optional[str] = None
     target: Optional[TargetCreate] = None
-    commitment: Optional[CommitmentCreate] = None
-    allocation: List[AllocationCreate]
+    income: Optional[IncomeCreate] = None
 
 class AccountBase(BaseModel):
     account_type: AccountType
@@ -1143,3 +1150,20 @@ class AnchorBalanceResponse(BaseModel):
 
   class Config:
     from_attributes = True
+
+nextdate_map = {
+  Frequency.MONTHLY: timedelta(days=30),
+  Frequency.BIMONTHLY: timedelta(days=60),
+  Frequency.QUARTERLY: timedelta(days=90),
+  Frequency.SEMIANNUALLY: timedelta(days=180),
+  Frequency.ANNUALLY: timedelta(days=365),
+}
+
+default_description_map = {
+  PortfolioType.GROWTH: "Investments in the pursuit of long term growth and financial independence",
+  PortfolioType.TARGET: "Investments to achieve a specific financial goal",
+  PortfolioType.INVEST: "Investments in long term and high risk assets",
+  PortfolioType.LIQUID: "Investments in short term and high liquid assets",
+  PortfolioType.EMERGENCY: "Protection against financial emergencies and sudden loss of income",
+  PortfolioType.INCOME: "Investing to earn income to meet current financial needs",
+}
