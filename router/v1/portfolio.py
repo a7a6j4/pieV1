@@ -262,7 +262,7 @@ async def getPortfolioValue(
         "assets": assets_list,
     }
 
-    if assets.get("target").get("amount", None) is not None:
+    if assets.get("target") is not None:
 
         target_value = assets.get("target", None).get("amount", 0)
         target_currency = assets.get("target", None).get("currency", None)
