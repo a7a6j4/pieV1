@@ -157,21 +157,6 @@ async def updateRiskProfile(db: db, data: schemas.RiskProfileUpdate, user: Annot
     db.commit()
     return risk_profile
 
-@user.patch("/password")
-async def updatePassword(db: db, new_password = Body(..., embed=True), token = Depends(auth.otpScheme)):
-
-    payload = await auth.decodeToken(token)
-    email = payload.get('email')
-    print(email)
-    user = db.execute(select(model.User).where(model.User.email == email)).scalar_one_or_none()
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    user.password = auth.hashpass(new_password)
-    db.commit()
-    return {
-        "message": "Password updated successfully"
-    }
-
 @user.get("/kyc/documents")
 async def getKycDocument(db: db, user: Annotated[model.User, Depends(auth.getActiveUser)]):
 
