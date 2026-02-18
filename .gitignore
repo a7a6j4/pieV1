@@ -14,3 +14,4 @@ build/
 uploads/
 uploads/*
 alembic/versions/
+CaddyFile

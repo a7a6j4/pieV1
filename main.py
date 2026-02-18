@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
         raise
     yield
 
-app = FastAPI(root_path="/api", lifespan=lifespan)
+app = FastAPI(root_path="/", lifespan=lifespan)
 
 async def integrity_error_handler(request: Request, exc: IntegrityError):
     return JSONResponse(
@@ -50,7 +50,7 @@ app.include_router(router=v1.v1)
 
 @app.get("/")
 async def root():
-    return RedirectResponse(url="/api/v1")
+    return RedirectResponse(url="/v1")
 
 templates = Jinja2Templates(directory="templates")  # 'templates' is your HTML folder
 
