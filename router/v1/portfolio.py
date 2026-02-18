@@ -408,11 +408,56 @@ async def deleteAttributes(db: db, target: bool = Query(False), commitment: bool
 
 @portfolio.get("/advice")
 async def getPortfolioAdvice(db: db, portfolio: model.Portfolio = Depends(getPortfolio)):
-    pass
     """
        - target to commitment: check that the value of periodic contributions can achieve the target
        - target to allocation: check that the allocation of the portfolio can achieve the target
        - portfolio expected return vs other allocations
     """
+    portfolio_value = await getPortfolioValue(db, await getPortfolioAssets(db, portfolio))
 
-# def generate_schedule_dates(start_date: datetime, frequency: schemas.Frequency, duration: int):
+    if portfolio.type == schemas.PortfolioType.EMERGENCY:
+        # get portfolio value and compare to target
+
+        deposit_product = db.execute(select(model.Deposit).where(model.Deposit.currency == portfolio.target.currency, model.Deposit.maxTenor <= 180, model.Deposit.minTenor >= 0).order_by(model.Deposit.rate.desc()).limit(1)).scalar_one_or_none()
+        
+        # mutual_fund_product = find the mutual fund with the highest expected return / yield
+        # 
+
+        value = portfolio_value.get("totalValueNgn") if portfolio.target.currency == schemas.Currency.NGN else portfolio_value.get("totalValueUsd")
+        target = portfolio.target.amount
+        progress = value / target
+
+        deficiency = target - value
+
+        advice = ""
+
+        if progress < 0.5:
+            advice = "You are at risk of not having enough emergency fund to cover your expenses in the event of an emergency."
+        elif progress < 0.75:
+            advice = "You are on track to have enough emergency fund to cover your expenses in the event of an emergency."
+        elif progress < 1:
+            advice = "You are on track to have enough emergency fund to cover your expenses in the event of an emergency."
+        else:
+            advice = "You are sufficienty protected for an financial emergency emergency risk"
+            deficiency = value - target
+
+        return {
+            "progress": progress,
+            "advice": advice,
+            "deficiency": deficiency,
+            "recomendedProduct": deposit_product,
+        }
+
+    if portfolio.type == schemas.PortfolioType.GROWTH:
+        # get portfolio value and compare to growth
+        portfolio_value = await getPortfolioValue(db, portfolio)
+        if portfolio_value.get("totalValueNgn") < portfolio.growth.amount:
+            pass
+
+    if portfolio.type == schemas.PortfolioType.INCOME:
+        # compare portfolio income yield to other products in similar income frequency
+        # if portfolio income yield is higher or equal, return the portfolio income yield
+        # if portfolio income yield is lower, return the other products in similar income frequency
+        pass
+
+# def generate_schedule_dates(start_date: datetime, frequency: schemas.Frequency, duration: int)

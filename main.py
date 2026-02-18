@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 from typing import Annotated
-from router.v1 import user, auth, account, transaction, portfolio, product, journal, wallet, deposit, advisory, admin, webhooks
+from router.v1 import v1
 import os
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from database import create_db_and_tables, db
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
         raise
     yield
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(root_path="/api", lifespan=lifespan)
 
 async def integrity_error_handler(request: Request, exc: IntegrityError):
     return JSONResponse(
@@ -46,19 +46,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(router=v1.v1)
 
-app.include_router(prefix="/api/v1", router=user.user)
-app.include_router(prefix="/api/v1", router=auth.auth)
-app.include_router(prefix="/api/v1",router=account.account)
-app.include_router(prefix="/api/v1",router=transaction.transaction)
-app.include_router(prefix="/api/v1",router=portfolio.portfolio)
-app.include_router(prefix="/api/v1",router=product.product)
-app.include_router(prefix="/api/v1",router=journal.journal)
-app.include_router(prefix="/api/v1",router=wallet.wallet)
-app.include_router(prefix="/api/v1",router=deposit.deposit)
-app.include_router(prefix="/api/v1",router=advisory.advisory)
-app.include_router(prefix="/api/v1",router=admin.admin)
-app.include_router(prefix="/api/v1",router=webhooks.webhooks)
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/api/v1")
 
 templates = Jinja2Templates(directory="templates")  # 'templates' is your HTML folder
 

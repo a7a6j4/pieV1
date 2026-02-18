@@ -2,7 +2,7 @@ import math
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import SecurityScopes
 from sqlalchemy import select, update, delete, func, and_, or_, not_, desc, asc, extract, case
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from datetime import datetime, timedelta
 from database import db
 import model
@@ -64,7 +64,7 @@ async def recommendIndependence(db: db, user = Depends(getUser)):
 @advisory.get("/emergency-risk")
 async def getEmergencyRisk(
     db: db, 
-    user = Depends(auth.getActiveUser)):
+    user: model.User = Depends(auth.getActiveUser)):
   """
     Check total low risk liquid assets as a proportion of 6 months income target amount
     ratio has to be greater then 1. can track state by how close to one
@@ -553,4 +553,61 @@ async def getTargetRecommendation(db: db,
 async def getPortfolioAllocation(db: db, portfolio: model.Portfolio = Depends(getPortfolio)):
   pass
 
+@advisory.get("/new-portfolio")
+async def getNewPortfolioAllocation(
+  db: db,
+  portfolio: model.Portfolio = Depends(getPortfolio) 
+  ):
 
+  if portfolio.type == schemas.PortfolioType.INCOME:
+
+    frequency = portfolio.income.frequency
+    # tenor = schemas.tenor_map[frequency]
+    tenor = 90
+
+    # mutual funds and deposits, which has the 
+
+    depositProducts = db.execute(
+      select(model.Deposit).
+      where(model.Deposit.maxTenor >= tenor, model.Deposit.minTenor <= tenor, model.Deposit.currency == 'NGN', model.Deposit.isActive == True).
+      order_by(model.Deposit.rate.desc()).
+      limit(3)).scalars().all()
+    if portfolio.income.amount is not None:
+      target_income = portfolio.income.amount
+      print(target_income)
+      requiredInvestments = list(map(lambda x: {
+        "product": x,
+        "requiredInvestment": target_income / x.rate * 100 / (tenor / 365)
+      }, depositProducts))
+      return requiredInvestments
+
+    return depositProducts
+
+  elif portfolio.type in [schemas.PortfolioType.TARGET, schemas.PortfolioType.GROWTH, schemas.PortfolioType.INVEST]:
+
+    # get highest expected return variable product
+
+      duration = portfolio.duration
+      if portfolio.target is not None:
+        if portfolio.target.targetDate is not None:
+
+          target_date = portfolio.target.targetDate
+          days_diff = relativedelta(target_date, datetime.now()).days
+
+          if days_diff <= 365:
+            # get highest return deposit or mutual fund return
+            pass
+
+          elif days_diff > 365 and days_diff <= 1095:
+            # get highest return variable product
+            pass
+
+          else:
+
+            pass
+
+
+
+          pass
+        else: 
+          pass

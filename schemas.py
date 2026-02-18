@@ -1167,3 +1167,11 @@ default_description_map = {
   PortfolioType.EMERGENCY: "Protection against financial emergencies and sudden loss of income",
   PortfolioType.INCOME: "Investing to earn income to meet current financial needs",
 }
+
+tenor_map = {
+  Frequency.MONTHLY: 30,
+  Frequency.BIMONTHLY: 60,
+  Frequency.QUARTERLY: 90,
+  Frequency.SEMIANNUALLY: 180,
+  Frequency.ANNUALLY: 365,
+}
