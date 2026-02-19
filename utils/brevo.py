@@ -8,7 +8,7 @@ from config import settings
 
 api_key = settings.BREVO_API_KEY
 
-async def sendOtpEmail(otp: str, email: str, otpType: OtpType):
+async def sendOtpEmail(otp: str, email: str, name: str, otpType: OtpType):
 
     url = "https://api.brevo.com/v3/smtp/email"
     headers = {
@@ -24,16 +24,19 @@ async def sendOtpEmail(otp: str, email: str, otpType: OtpType):
         "to": [
             {
                 "email": email,
-                "name": "John Doe"
+                "name": name
             }
         ],
         "subject": f"{opr[otpType.value].get('subject')}",
-        "htmlContent": f"<html><head></head><body><p>Hello,</p> Your {opr[otpType.value].get('subject')} is {otp}.</p></body></html>"
+        "templateId":11,
+        "params": {
+            "otp": otp,
+            "minutes": int(opr[otpType.value].get('seconds') / 60)
+        }
     }
 
     response = requests.post(url, headers=headers, json=data)
-    print(response.json())
-    return response.status_code
+    return response
 
     # Check the response
 

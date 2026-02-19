@@ -154,9 +154,9 @@ async def sendOtp(data: dict, type: schemas.OtpType):
     otp = ''.join(single_digits)
 
     hashed_otp = hashpass(otp)
-    email_response = await sendOtpEmail(otp=otp, email=data.get('email'), otpType=type)
-    if email_response not in [200, 201]:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Failed to send OTP")
+    email_response = await sendOtpEmail(otp=otp, email=data.get('email'), otpType=type, name=f"{data.get('firstName')} {data.get('lastName')}")
+    if email_response.status_code not in [200, 201]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=email_response.json().get('message'))
     seconds = schemas.opr.get(type.value).get("seconds")
     expires = timedelta(seconds=int(seconds))
     payload = {"otp": hashed_otp, **data, "scope": type.value}

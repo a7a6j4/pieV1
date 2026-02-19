@@ -651,13 +651,15 @@ class IncomeCreate(BaseModel):
     frequency: Frequency
 
 class PortfolioBase(BaseModel):
-    active: bool = True
-    closed: bool = False
-    risk: Optional[int] = 1
     duration: Optional[int] = 1
     description: Optional[str] = None
 
-class PortfolioSchema(PortfolioBase):
+class PortfolioCreate(PortfolioBase):
+    active: bool = True
+    closed: bool = False
+    risk: Optional[int] = 1
+
+class PortfolioSchema(PortfolioCreate):
     id: int
     userId: int
     created: datetime
