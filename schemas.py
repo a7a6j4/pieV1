@@ -374,8 +374,6 @@ class PortfolioType(enum.Enum):
     INVEST = "invest"
 
 class Frequency(enum.Enum):
-    DAILY = "daily"
-    WEEKLY = "weekly"
     MONTHLY = "monthly"
     QUARTERLY = "quarterly"
     ANNUALLY = "annually"
