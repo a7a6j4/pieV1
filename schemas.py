@@ -490,6 +490,9 @@ class ProductGroupBase(BaseModel):
     name: str
     description: Optional[str] = None
     market: Country
+    assetAccountId: int
+    receivableAccountId: int
+    payableAccountId: int
 
 class ProductGroupCreate(ProductGroupBase):
     feeIds: Optional[List[int]] = None
