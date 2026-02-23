@@ -83,8 +83,6 @@ async def getProduct(
       base_query = base_query.filter(model.Product.productClass == productClass)
     if type:
       base_query = base_query.filter(model.Product.category == type)
-    if page and limit:
-      base_query = base_query.offset((page - 1) * limit).limit(limit)
     if assetClass:
       base_query = base_query.filter(model.Product.assetClass == assetClass)
     if currency:
@@ -103,7 +101,8 @@ async def getProduct(
       base_query = base_query.filter(model.Variable.minTenor == minTenor)
     if maxTenor:
       base_query = base_query.filter(model.Variable.maxTenor == maxTenor)
-    return base_query.options(joinedload(model.Variable.attributes)).all()
+      
+    return base_query.offset((page - 1) * limit).limit(limit).options(joinedload(model.Variable.attributes)).all()
 
 @product.post("/issuer", status_code=status.HTTP_201_CREATED)
 async def createIssuer(db: db, issuer_data: schemas.IssuerCreate = Depends(schemas.IssuerCreate.from_issuer_base)):
