@@ -20,19 +20,27 @@ async def upload_file(
   file_name: str,
   content_type: str):
 
+    file_object.seek(0,2)
+    file_size = file_object.tell()
+    file_object.seek(0)
 
-  file_object.seek(0,2)
-  file_size = file_object.tell()
-  file_object.seek(0)
+    if not minio_client.bucket_exists(bucket_name):
+        try:
+            minio_client.make_bucket(bucket_name)
+        except Exception as e:
+            raise Exception(f"Failed to create bucket: {e}")
 
-  minio_client.put_object(
-    bucket_name=bucket_name,
-    object_name=file_name,
-    data=file_object,
-    length=file_size,
-    content_type=content_type
-  )
-  return f"{settings.MINIO_ENDPOINT}/{bucket_name}/{file_name}"
+    try:
+        minio_client.put_object(
+            bucket_name=bucket_name,
+            object_name=file_name,
+            data=file_object,
+            length=file_size,
+            content_type=content_type
+        )
+        return f"{settings.MINIO_ENDPOINT}/{bucket_name}/{file_name}"
+    except Exception as e:
+      raise Exception(f"Failed to upload file: {e}")
 
 async def get_file(bucket_name: str, file_name: str):
   return minio_client.presigned_get_object(bucket_name=bucket_name, object_name=file_name)

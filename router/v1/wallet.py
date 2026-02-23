@@ -37,13 +37,13 @@ async def createWallet(
 @wallet.get('/')
 async def getUserWallet(
   db: db,
-  kyc: Annotated[model.Kyc, Depends(checkKycVerification)],
+  # kyc: Annotated[model.Kyc, Depends(checkKycVerification)],
   # walletId: int,
   ):
 
   # wallet = db.execute(select(model.Wallet).where(model.Wallet.userId == user.id, model.Wallet.id == walletId)).scalar_one_or_none()
 
-  anchor_account = db.execute(select(model.AnchorAccount).join(model.AnchorUser).where(model.AnchorUser.userId == kyc.userId)).scalar_one_or_none()
+  anchor_account = db.execute(select(model.AnchorAccount).join(model.AnchorUser).where(model.AnchorUser.userId == 1)).scalar_one_or_none()
   if anchor_account is None:
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anchor account not found")
 
@@ -60,12 +60,18 @@ async def getWalletBalance(
   last_request: Optional[datetime] = None
 ):
 
-  balance_request = await getAnchorBalance(account_number=wallet.depositAccountId)
-  if balance_request.status_code != 200:
-    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=balance_request.json())
+  # balance_request = await getAnchorBalance(account_number=wallet.depositAccountId)
+  # if balance_request.status_code != 200:
+  #   raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=balance_request.json())
 
-  balance = schemas.AnchorBalanceResponse(**balance_request.json())
-  return balance
+  # balance = schemas.AnchorBalanceResponse(**balance_request.json())
+  # return balance
+  return {
+    "availableBalance": 0.00,
+    "ledgerBalance": 0.00,
+    "hold": 0.00,
+    "pending": 0.00,
+  }
 
 #   net_inflow_query = (
 #     select(

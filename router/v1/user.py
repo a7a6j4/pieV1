@@ -284,29 +284,33 @@ async def createUserKycAddress(db: db, user: Annotated[model.User, Security(getU
     submitted = db.execute(update(model.Kyc).where(model.Kyc.userId == user.id).values(submitted=True).returning(model.Kyc)).scalar_one_or_none()
 
     # create anchor customer
-    result = await createAnchorCustomer(
-        firstName=user.first_name,
-        lastName=user.last_name,
-        maidenName=user.kyc.maidenName,
-        dateOfBirth=user.dateOfBirth.isoformat(),
-        gender=user.kyc.gender.value,
-        bvn=user.bvn,
-        selfieImage=selfie_image_base64,
-        idType=user.kyc.idType.value,
-        idNumber=user.kyc.idNumber,
-        email=user.email,
-        phoneNumber=user.phone_number,
-        middleName=user.other_names,
-        expiryDate=user.kyc.idExpirationDate.isoformat() if user.kyc.idExpirationDate else None,
-        addressLine_1=data.addressLineOne,
-        addressLine_2=data.addressLineTwo,
-        city=data.city,
-        state=data.state.value,
-        postalCode=data.postalCode,
-    )
-    # print(result.json())
-    if result.status_code not in [200, 201]:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.text)
+    # result = await createAnchorCustomer(
+    #     firstName=user.first_name,
+    #     lastName=user.last_name,
+    #     maidenName=user.kyc.maidenName,
+    #     dateOfBirth=user.dateOfBirth.isoformat(),
+    #     gender=user.kyc.gender.value,
+    #     bvn=user.bvn,
+    #     selfieImage=selfie_image_base64,
+    #     idType=user.kyc.idType.value,
+    #     idNumber=user.kyc.idNumber,
+    #     email=user.email,
+    #     phoneNumber=user.phone_number,
+    #     middleName=user.other_names,
+    #     expiryDate=user.kyc.idExpirationDate.isoformat() if user.kyc.idExpirationDate else None,
+    #     addressLine_1=data.addressLineOne,
+    #     addressLine_2=data.addressLineTwo,
+    #     city=data.city,
+    #     state=data.state.value,
+    #     postalCode=data.postalCode,
+    # )
+    # anchor_user = model.AnchorUser(customerId=result.json().get("data").get("id"), userId=user.id)
+    # db.add(anchor_user)
+    # if result.status_code not in [200, 201]:
+    #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.text)
+
+    # create demo deposit account
+    
 
     db.execute(update(model.UserAddress).where(model.UserAddress.kycId == user.kyc.id).values(
         houseNumber=data.houseNumber,
@@ -320,8 +324,6 @@ async def createUserKycAddress(db: db, user: Annotated[model.User, Security(getU
     user_address = model.UserAddress(kycId=user.kyc.id, houseNumber=data.houseNumber, addressLineOne=data.addressLineOne, addressLineTwo=data.addressLineTwo, city=data.city, state=data.state.value, postalCode=data.postalCode)
     db.add(user_address)
 
-    anchor_user = model.AnchorUser(customerId=result.json().get("data").get("id"), userId=user.id)
-    db.add(anchor_user)
     try:
         db.commit()
     except Exception as e:

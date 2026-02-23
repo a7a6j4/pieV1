@@ -16,7 +16,9 @@ import dotenv
 import os
 from dotenv import load_dotenv
 import pandas as pd
-import numpy as np  
+import numpy as np
+
+from utils.minio import get_file, upload_file  
 from ..v1.auth import readUser
 from utils import tiingo
 from config import settings
@@ -37,32 +39,84 @@ async def getProduct(
   productClass: Optional[schemas.ProductClass] = Query(default=None),
   page: Optional[int] = Query(default=1),
   type: Optional[str] = Query(enum=["variable", "deposit"], default=None),
+  assetClass: Optional[schemas.AssetClassType] = Query(default=None),
+  currency: Optional[schemas.Currency] = Query(default=None),
+  isActive: Optional[bool] = Query(default=None),
+  productGroupId: Optional[int] = Query(default=None),
+  benchmarkId: Optional[int] = Query(default=None),
+  riskLevel: Optional[int] = Query(default=None),
+  horizon: Optional[int] = Query(default=None),
+  minTenor: Optional[int] = Query(default=None),
+  maxTenor: Optional[int] = Query(default=None),
+  interestPay: Optional[schemas.InterestPay] = Query(default=None),
+  penalty: Optional[int] = Query(default=None),
+  fixed: Optional[bool] = Query(default=None),
   limit: Optional[int] = Query(default=10)):
-
 
   if productId:
     product = db.query(model.Product).filter(model.Product.id == productId).first()
     if not product:
       raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    
     if product.category == "variable":
-      return db.query(model.Variable).filter(model.Variable.id == productId).first()
+      product = db.query(model.Variable).filter(model.Variable.id == productId).first()
     elif product.category == "deposit":
-      return db.query(model.Deposit).filter(model.Deposit.id == productId).first()
+      product = db.query(model.Deposit).filter(model.Deposit.id == productId).first()
+    else:
+      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid product type")
+
+    # get product image url
+    # product_copy = product.copy()
+
+    if product.img:
+      try:
+        img_url = await get_file(bucket_name="product", file_name=product.img)
+        product.img = img_url
+      except Exception as e:
+        pass
+
+    return product
   else:
     base_query = db.query(model.Product)
      
     if productClass:
-      base_query = base_query.filter(model.Product.product_class == productClass)
+      base_query = base_query.filter(model.Product.productClass == productClass)
     if type:
       base_query = base_query.filter(model.Product.category == type)
     if page and limit:
       base_query = base_query.offset((page - 1) * limit).limit(limit)
+    if assetClass:
+      base_query = base_query.filter(model.Product.assetClass == assetClass)
+    if currency:
+      base_query = base_query.filter(model.Product.currency == currency)
+    if isActive:
+      base_query = base_query.filter(model.Product.isActive == isActive)
+    if productGroupId:
+      base_query = base_query.filter(model.Product.productGroupId == productGroupId)
+    if benchmarkId:
+      base_query = base_query.filter(model.Product.benchmarkId == benchmarkId)
+    if riskLevel:
+      base_query = base_query.filter(model.Product.riskLevel == riskLevel)
+    if horizon:
+      base_query = base_query.filter(model.Product.horizon == horizon)
+    if minTenor:
+      base_query = base_query.filter(model.Variable.minTenor == minTenor)
+    if maxTenor:
+      base_query = base_query.filter(model.Variable.maxTenor == maxTenor)
     return base_query.options(joinedload(model.Variable.attributes)).all()
 
-@product.post('/issuer', response_model=schemas.IssuerSchema)
-async def createIssuer(issuer_data: schemas.IssuerCreate, db: db):
+@product.post("/issuer", status_code=status.HTTP_201_CREATED)
+async def createIssuer(db: db, issuer_data: schemas.IssuerCreate = Depends(schemas.IssuerCreate.from_issuer_base)):
+
   new_issuer = model.Issuer(**issuer_data.model_dump())
   db.add(new_issuer)
+  if issuer_data.img:
+    file_name = f"logo/{issuer_data.name.replace(' ', '_')}.{issuer_data.img.filename.split('.')[-1]}"
+    try:
+      await upload_file(bucket_name="issuer", file_object=issuer_data.img.file, file_name=file_name, content_type=issuer_data.img.content_type)
+      new_issuer.img = file_name
+    except Exception as e:
+      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to upload image: {e}")
   db.commit()
   db.refresh(new_issuer)
   return new_issuer
@@ -149,34 +203,53 @@ async def updateProductGroup(
   db.refresh(new_product_group)  
   return new_product_group
 
-@product.post('/variable', response_model=schemas.ProductSchema)
+@product.post('/variable', status_code=status.HTTP_201_CREATED)
 async def createProduct(
   db: db,
-  product_data: schemas.VariableCreate,
-  issuer = Depends(getIssuer),
+  product_data: schemas.VariableCreate = Depends(schemas.VariableCreate.from_variable_base),
+  issuer: model.Issuer = Depends(getIssuer),
 ):
-
   new_product = model.Variable(**product_data.model_dump())
   new_product.issuer = issuer  
   db.add(new_product)
+
+  if product_data.img:
+    file_name = f"logo/{product_data.title.replace(' ', '_')}.{product_data.img.filename.split('.')[-1]}"
+    try:
+      await upload_file(bucket_name="product", file_object=product_data.img.file, file_name=file_name, content_type=product_data.img.content_type)
+      new_product.img = file_name
+    except Exception as e:
+      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to upload image: {e}")
+  elif issuer.img is not None:
+    new_product.img = issuer.img
+
   db.commit()
   db.refresh(new_product)
 
   return new_product
 
-@product.post('/deposit', response_model=schemas.ProductGroupSchema)
+@product.post('/deposit', status_code=status.HTTP_201_CREATED)
 async def createDeposit(
   db: db,
-  product_data: schemas.DepositCreate,
-  issuer = Depends(getIssuer),
+  product_data: schemas.DepositCreate = Depends(schemas.DepositCreate.from_deposit_base),
+  issuer: model.Issuer = Depends(getIssuer),
 ):
 
-  product_dict = product_data.model_dump()
-  new_product = model.Deposit(**product_dict)
-
+  new_product = model.Deposit(**product_data.model_dump())
   new_product.issuer = issuer
   new_product.productGroupId = product_data.productGroupId
   db.add(new_product)
+
+  if product_data.img:
+    file_name = f"logo/{product_data.title.replace(' ', '_')}.{product_data.img.filename.split('.')[-1]}"
+    try:
+      await upload_file(bucket_name="product", file_object=product_data.img.file, file_name=file_name, content_type=product_data.img.content_type)
+      new_product.img = file_name
+    except Exception as e:
+      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to upload image: {e}")
+  elif issuer.img is not None:
+    new_product.img = issuer.img
+
   db.commit()
   db.refresh(new_product)
 
@@ -509,6 +582,10 @@ async def getPrice(db: db, variable_id: int):
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Variable {variable_id} is not an equity product")
 
 
-
-
-
+@product.post('/benchmark')
+async def createBenchmark(db: db, benchmark: schemas.BenchmarkCreate):
+  new_benchmark = model.Benchmark(**benchmark.model_dump())
+  db.add(new_benchmark)
+  db.commit()
+  db.refresh(new_benchmark)
+  return new_benchmark

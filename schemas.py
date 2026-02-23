@@ -1,11 +1,13 @@
 from ctypes import Union
 from click import File
-from fastapi import UploadFile
+from fastapi import Form, UploadFile
 from pydantic import BaseModel, model_validator, field_validator, Field as field
 from typing import Optional, List, Annotated
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 import enum
+
+from pygments.formatters import img
 
 class Country(enum.Enum):
     """
@@ -443,6 +445,19 @@ class ProductCategory(enum.Enum):
     VARIABLE = "variable"
     DEPOSIT = "deposit"
 
+class AssetClassType(enum.Enum):
+    EQUITY = "equity"
+    BOND = "bond"
+    MONEY_MARKET = "money_market"
+    FIXED_INCOME = "fixed_income"
+    CASH = "cash"
+    REAL_ESTATE = "real_estate"
+    CRYPTOCURRENCY = "cryptocurrency"
+    COMMODITY = "commodity"
+    INFRASTRUCTURE = "infrastructure"
+    PRIVATE_DEBT = "private_debt"
+    OTHER = "other"
+
 inflow_types = [
    TransactionType.DEPOSIT,
    TransactionType.SELL,
@@ -509,9 +524,20 @@ class TransactionFeeSchema(TransactionFeeBase):
 
 class IssuerBase(BaseModel):
     name: str
+    img: Optional[UploadFile] = None
 
 class IssuerCreate(IssuerBase):
-    pass
+    
+    @classmethod
+    def from_issuer_base(
+        cls,
+        name: str = Form(...),
+        img: Optional[UploadFile] = Form(None),
+    ):
+        return cls(
+            name=name,
+            img=img,
+        )
 
 class IssuerSchema(IssuerBase):
     id: int
@@ -531,6 +557,8 @@ class ProductBase(BaseModel):
     currency: Currency
     isActive: bool = True
     productGroupId: int
+    benchmarkId: Optional[int] = None
+    assetClass: Optional[AssetClassType] = None
 
 class VariableBase(ProductBase):
     symbol: str
@@ -541,15 +569,109 @@ class DepositBase(ProductBase):
     maxTenor: int
     interestPay: InterestPay
     penalty: Optional[int]
-    withholdingTax: int
     fixed: bool = False
     rate: int
 
-class VariableCreate(VariableBase):
-    pass
+class ProductCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    riskLevel: int
+    horizon: int
+    benchmarkId: Optional[int] = None
+    assetClass: AssetClassType
+    currency: Currency
+    isActive: bool = True
+    img: Optional[UploadFile] = None
+    currency: Currency
+    isActive: bool = True
+    productGroupId: int
+    benchmarkId: int = Form(...)
 
-class DepositCreate(DepositBase):
-    pass
+class VariableCreate(ProductCreate):
+
+    symbol: str
+    productClass: ProductClass
+    
+    @classmethod
+    def from_variable_base(
+        cls, 
+        title: str = Form(...),
+        description: Optional[str] = Form(None),
+        riskLevel: int = Form(...),
+        horizon: int = Form(...),
+        img: Optional[UploadFile] = Form(None),
+        currency: Currency = Form(...),
+        isActive: bool = Form(True),
+        productGroupId: int = Form(...),
+        benchmarkId: int = Form(...),
+        assetClass: AssetClassType = Form(...),
+        symbol: str = Form(...),
+        productClass: ProductClass = Form(...),
+    ):
+        return cls(
+            title=title,
+            description=description,
+            riskLevel=riskLevel,
+            horizon=horizon,
+            img=img,
+            currency=currency,
+            isActive=isActive,
+            productGroupId=productGroupId,
+            benchmarkId=benchmarkId,
+            assetClass=assetClass,
+            symbol=symbol,
+            productClass=productClass,
+        )
+
+class DepositCreate(ProductCreate):
+    minTenor: int
+    maxTenor: int
+    interestPay: InterestPay
+    penalty: Optional[int]
+    fixed: bool = False
+    rate: int
+    productClass: ProductClass
+    
+    @classmethod
+    def from_deposit_base(
+        cls,
+        title: str = Form(...),
+        description: Optional[str] = Form(None),
+        riskLevel: int = Form(...),
+        horizon: int = Form(...),
+        img: Optional[UploadFile] = Form(None),
+        currency: Currency = Form(...),
+        isActive: bool = Form(True),
+        productGroupId: int = Form(...),
+        benchmarkId: int = Form(...),
+        assetClass: AssetClassType = Form(...),
+        minTenor: int = Form(...),
+        maxTenor: int = Form(...),
+        interestPay: InterestPay = Form(...),
+        penalty: Optional[int] = Form(None),
+        fixed: bool = Form(False),
+        rate: int = Form(...),
+        productClass: ProductClass = Form(ProductClass.DEPOSIT),
+    ):
+        return cls(
+            title=title,
+            description=description,
+            riskLevel=riskLevel,
+            horizon=horizon,
+            img=img,
+            currency=currency,
+            isActive=isActive,
+            productGroupId=productGroupId,
+            benchmarkId=benchmarkId,
+            assetClass=assetClass,
+            minTenor=minTenor,
+            maxTenor=maxTenor,
+            interestPay=interestPay,
+            penalty=penalty,
+            fixed=fixed,
+            rate=rate,
+            productClass=productClass,
+        )
 
 class ProductSchema(ProductBase):
     id: int
@@ -651,6 +773,7 @@ class IncomeCreate(BaseModel):
     frequency: Frequency
 
 class PortfolioBase(BaseModel):
+    title: Optional[str] = None
     duration: Optional[int] = 1
     description: Optional[str] = None
 
@@ -827,11 +950,9 @@ class AccountSummarySchema(BaseModel):
         from_attributes = True
 
 class BenchmarkCreate(BaseModel):
-
+    title: str
+    currency: Currency
     symbol: str
-    name: str
-    description: Optional[str] = None
-    currency: str
 
 class BenchmarkMeta(BaseModel):
     date: datetime
@@ -1140,6 +1261,7 @@ class AnchorBalanceData(BaseModel):
   availableBalance: float
   ledgerBalance: float
   hold: float
+
   pending: float
 
   class Config:

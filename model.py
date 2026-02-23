@@ -14,7 +14,8 @@ from sqlalchemy import (
     CheckConstraint,
     Index,
     text,
-    Numeric
+    Numeric,
+    BigInteger
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker, registry
 from sqlalchemy.sql import func
@@ -288,6 +289,17 @@ class TransactionFee(Base):
 
     productGroups: Mapped[List["ProductGroupFees"]] = relationship(back_populates="transactionFee")
 
+class Benchmark(Base):
+    __tablename__ = "benchmark"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str]
+    currency: Mapped[schemas.Currency]
+    symbol: Mapped[str]
+    products: Mapped[List["Product"]] = relationship()
+
+    portfolios: Mapped[List["Portfolio"]] = relationship()
+    products: Mapped[List["Product"]] = relationship()
+
 class Product(Base):
     __tablename__ = "product"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -300,7 +312,11 @@ class Product(Base):
     horizon: Mapped[int]
     img: Mapped[Optional[str]]
     currency: Mapped[schemas.Currency]
+    assetClass: Mapped[schemas.AssetClassType]
+    productClass: Mapped[schemas.ProductClass]
     category: Mapped[str]
+    benchmarkId: Mapped[int] = mapped_column(ForeignKey("benchmark.id"))
+    benchmark: Mapped["Benchmark"] = relationship(back_populates="products")
     isActive: Mapped[bool] = mapped_column(default=False)
     created: Mapped[datetime] = mapped_column(server_default=func.now())
     lastModified: Mapped[datetime] = mapped_column(
@@ -318,8 +334,6 @@ class Variable(Product):
     __tablename__ = "variable"
     id: Mapped[int] = mapped_column(ForeignKey("product.id"), primary_key=True)
     symbol: Mapped[str] = mapped_column(unique=True)
-    productClass: Mapped[schemas.VariableType] = mapped_column()
-    
     attributes: Mapped["VariableAttributes"] = relationship(back_populates="variable")
     values: Mapped[List["VariableValue"]] = relationship(back_populates="variable")
     __mapper_args__ = {
@@ -344,7 +358,6 @@ class Deposit(Product):
     fixed: Mapped[bool] = mapped_column(default=True)
     rate: Mapped[int] # in basis points
     penalty: Mapped[Optional[int]] = mapped_column(default=0) # in basis points
-    withholdingTax: Mapped[int] = mapped_column(default=100) # in basis points
 
     __mapper_args__ = {
         "polymorphic_identity": "deposit",
@@ -367,10 +380,13 @@ class Portfolio(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     userId: Mapped[int] = mapped_column(ForeignKey("user.id"))
     active: Mapped[bool] = mapped_column(default=True)
+    title: Mapped[str] = mapped_column(default="Portfolio")
     type: Mapped[schemas.PortfolioType] = mapped_column(default=schemas.PortfolioType.LIQUID)
     risk: Mapped[int] = mapped_column(default=1)
     duration: Mapped[Optional[int]]
     created: Mapped[datetime] = mapped_column(server_default=func.now())
+    benchmarkId: Mapped[Optional[int]] = mapped_column(ForeignKey("benchmark.id"))
+    benchmark: Mapped["Benchmark"] = relationship(back_populates="portfolios")
     updated: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()
     )
@@ -392,7 +408,7 @@ class PortfolioIncome(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
-    amount: Mapped[int]
+    amount: Mapped[int] = mapped_column(BigInteger)
     currency: Mapped[schemas.Currency]
     frequency: Mapped[schemas.Frequency]
     startDate: Mapped[datetime]
@@ -403,7 +419,7 @@ class PortfolioTarget(Base):
     __tablename__ = "portfoliotarget"
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
-    amount: Mapped[int]
+    amount: Mapped[int] = mapped_column(BigInteger)
     currency: Mapped[schemas.Currency]
     targetDate: Mapped[Optional[datetime]]
     created: Mapped[datetime] = mapped_column(server_default=func.now())
@@ -414,7 +430,7 @@ class PortfolioContributionPlan(Base):
     __tablename__ = "portfoliocontributionplan"
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
-    amount: Mapped[int]
+    amount: Mapped[int] = mapped_column(BigInteger)
     currency: Mapped[schemas.Currency]
     frequency: Mapped[schemas.Frequency]
     startDate: Mapped[datetime]
@@ -425,11 +441,12 @@ class PortfolioAllocation(Base):
     __tablename__ = "portfolioallocation"
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
+    assetClass: Mapped[Optional[schemas.AssetClassType]]
+    currency: Mapped[schemas.Currency]
     targetAllocation: Mapped[float]
-    productGroupId: Mapped[int] = mapped_column(ForeignKey("productgroup.id"))
-    productGroup: Mapped["ProductGroup"] = relationship()
-
     portfolio: Mapped["Portfolio"] = relationship(back_populates="allocation")
+
+    __table_args__ = (UniqueConstraint("portfolioId", "assetClass", "currency"),)
 
 class PortfolioStats(Base):
     __tablename__ = "portfoliostats"
@@ -464,7 +481,7 @@ class PortfolioLedger(Base):
     transactionId: Mapped[Optional[int]] = mapped_column(ForeignKey("portfoliotransaction.id"))
     transaction: Mapped[Optional["PortfolioTransaction"]] = relationship(lazy='selectin')
     side: Mapped[schemas.UserLedgerSide]
-    amount: Mapped[int]
+    amount: Mapped[int] = mapped_column(BigInteger)
     date: Mapped[datetime]
     account: Mapped[schemas.PortfolioAccount]
 
@@ -524,7 +541,7 @@ class PortfolioTransaction(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     portfolioId: Mapped[int] = mapped_column(ForeignKey("portfolio.id"))
     type: Mapped[schemas.TransactionType]
-    amount: Mapped[int]
+    amount: Mapped[int] = mapped_column(BigInteger)
     date: Mapped[datetime] = mapped_column(server_default=func.now())
     status: Mapped[schemas.TransactionStatus]
     productId: Mapped[int] = mapped_column(ForeignKey("product.id"))
@@ -608,7 +625,7 @@ class WalletTransaction(Base):
     settled: Mapped[bool] = mapped_column(default=False)
     settledAt: Mapped[Optional[datetime]]
     type: Mapped[schemas.TransactionType]
-    amount: Mapped[int]
+    amount: Mapped[int] = mapped_column(BigInteger)
     date: Mapped[datetime] = mapped_column(server_default=func.now())
     status: Mapped[schemas.TransactionStatus]
     journalId: Mapped[int] = mapped_column(ForeignKey("journal.id"))
@@ -623,6 +640,7 @@ class WalletTransaction(Base):
     @property
     def portfolio_transactions(self) -> List["PortfolioTransaction"]:
         return [assoc.portfolio_transaction for assoc in self.portfolio_transaction_associations]
+
 
 # financial accounting model
 
@@ -663,7 +681,7 @@ class JournalEntry(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     accountId: Mapped[int] = mapped_column(ForeignKey("account.id"))
     journalId: Mapped[int] = mapped_column(ForeignKey("journal.id"))
-    amount: Mapped[int]
+    amount: Mapped[int] = mapped_column(BigInteger)
     side: Mapped[schemas.EntrySide]  # e.g., "credit", "debit"
     description: Mapped[Optional[str]]
 
