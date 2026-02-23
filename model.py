@@ -245,7 +245,6 @@ class ProductGroup(Base):
     name: Mapped[str] = mapped_column(unique=True)
     description: Mapped[Optional[str]] 
     market: Mapped[schemas.Country]
-    productClass: Mapped[schemas.ProductClass]
     assetAccountId: Mapped[int] = mapped_column(ForeignKey("account.id"))
     receivableAccountId: Mapped[int] = mapped_column(ForeignKey("account.id"))
     payableAccountId: Mapped[int] = mapped_column(ForeignKey("account.id"))
