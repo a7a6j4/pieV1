@@ -787,13 +787,12 @@ class PortfolioBase(BaseModel):
     title: Optional[str] = None
     duration: int = field(default=1, ge=1)
     description: Optional[str] = None
-
-class PortfolioCreate(PortfolioBase):
     active: bool = True
     closed: bool = False
     risk: int = field(default=1, ge=1)
 
-class PortfolioSchema(PortfolioCreate):
+
+class PortfolioSchema(PortfolioBase):
     id: int
     userId: int
     created: datetime
