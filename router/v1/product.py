@@ -51,7 +51,10 @@ async def getProduct(
   interestPay: Optional[schemas.InterestPay] = Query(default=None),
   penalty: Optional[int] = Query(default=None),
   fixed: Optional[bool] = Query(default=None),
-  limit: Optional[int] = Query(default=10)):
+  limit: Optional[int] = Query(default=10),
+  minHorizon: Optional[int] = Query(default=None),
+  maxHorizon: Optional[int] = Query(default=None)
+  ):
 
   if productId:
     product = db.query(model.Product).filter(model.Product.id == productId).first()
@@ -97,11 +100,15 @@ async def getProduct(
       base_query = base_query.filter(model.Product.riskLevel == riskLevel)
     if horizon:
       base_query = base_query.filter(model.Product.horizon == horizon)
+    if maxHorizon:
+      base_query = base_query.filter(model.Product.horizon <= maxHorizon)
+    if minHorizon:
+      base_query = base_query.filter(model.Product.horizon >= minHorizon)
     if minTenor:
-      base_query = base_query.filter(model.Variable.minTenor == minTenor)
+      base_query = base_query.filter(model.Product.horizon >= minTenor)
     if maxTenor:
-      base_query = base_query.filter(model.Variable.maxTenor == maxTenor)
-      
+      base_query = base_query.filter(model.Product.horizon <= maxTenor)
+
     return base_query.offset((page - 1) * limit).limit(limit).options(joinedload(model.Variable.attributes)).all()
 
 @product.post("/issuer", status_code=status.HTTP_201_CREATED)
