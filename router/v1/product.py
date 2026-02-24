@@ -218,7 +218,6 @@ async def updateProductGroup(
 @product.post('/variable', status_code=status.HTTP_201_CREATED)
 async def createProduct(
   db: db,
-  attributes: schemas.VariableAttributesCreate,
   product_data: schemas.VariableCreate = Depends(schemas.VariableCreate.from_variable_base),
   issuer: model.Issuer = Depends(getIssuer),
 ):
