@@ -785,13 +785,13 @@ class IncomeCreate(BaseModel):
 
 class PortfolioBase(BaseModel):
     title: Optional[str] = None
-    duration: Optional[int] = 1
+    duration: int = field(default=1, ge=1)
     description: Optional[str] = None
 
 class PortfolioCreate(PortfolioBase):
     active: bool = True
     closed: bool = False
-    risk: Optional[int] = 1
+    risk: int = field(default=1, ge=1)
 
 class PortfolioSchema(PortfolioCreate):
     id: int
