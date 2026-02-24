@@ -62,6 +62,7 @@ async def createPortfolio(
     description = attributes.description if attributes.description is not None and attributes.description != "" else schemas.default_description_map.get(type, None)
     
     portfolio = model.Portfolio(
+        title=attributes.title,
         userId=user.id, 
         type=type, 
         description=description, 
