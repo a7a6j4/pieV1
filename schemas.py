@@ -381,6 +381,7 @@ class Frequency(enum.Enum):
     ANNUALLY = "annually"
     BIMONTHLY = "bimonthly"
     SEMIANNUALLY = "semiannually"
+    NONE = "none"
 
 class VariableType(enum.Enum):
     STOCK = "stock"
@@ -625,6 +626,13 @@ class VariableCreate(ProductCreate):
             symbol=symbol,
             productClass=productClass,
         )
+
+class VariableAttributesCreate(BaseModel):
+    fee: Optional[int] = None
+    liquidity: Optional[int] = None 
+    distribution: Optional[Frequency] = None
+    minAmount: Optional[int] = None
+    divYield: Optional[int] = None
 
 class DepositCreate(ProductCreate):
     minTenor: int

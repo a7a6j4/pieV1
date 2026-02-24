@@ -53,7 +53,9 @@ async def getProduct(
   fixed: Optional[bool] = Query(default=None),
   limit: Optional[int] = Query(default=10),
   minHorizon: Optional[int] = Query(default=None),
-  maxHorizon: Optional[int] = Query(default=None)
+  maxHorizon: Optional[int] = Query(default=None),
+  income: Optional[bool] = Query(default=None),
+  incomeFrequency: Optional[schemas.Frequency] = Query(default=None),
   ):
 
   if productId:
@@ -80,8 +82,12 @@ async def getProduct(
 
     return product
   else:
-    base_query = db.query(model.Product)
-     
+    base_query = db.query(model.Product).where(model.Product.isActive == True)
+
+    if income:
+      base_query = base_query.filter(model.Variable.attributes.distribution != schemas.Frequency.NONE)
+    if incomeFrequency is not None:
+      base_query = base_query.filter(model.Variable.attributes.distribution == incomeFrequency)
     if productClass:
       base_query = base_query.filter(model.Product.productClass == productClass)
     if type:
@@ -212,6 +218,7 @@ async def updateProductGroup(
 @product.post('/variable', status_code=status.HTTP_201_CREATED)
 async def createProduct(
   db: db,
+  attributes: schemas.VariableAttributesCreate,
   product_data: schemas.VariableCreate = Depends(schemas.VariableCreate.from_variable_base),
   issuer: model.Issuer = Depends(getIssuer),
 ):
@@ -233,6 +240,19 @@ async def createProduct(
   db.refresh(new_product)
 
   return new_product
+
+@product.post('/variable/attributes', status_code=status.HTTP_201_CREATED)
+async def createVariableAttributes(
+  db: db,
+  attributes: schemas.VariableAttributesCreate,
+  product: model.Product = Depends(getProduct),
+):
+  new_attributes = model.VariableAttributes(**attributes.model_dump())
+  new_attributes.variable = product
+  db.add(new_attributes)
+  db.commit()
+  db.refresh(new_attributes)
+  return new_attributes
 
 @product.post('/deposit', status_code=status.HTTP_201_CREATED)
 async def createDeposit(

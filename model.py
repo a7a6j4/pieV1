@@ -333,7 +333,7 @@ class Variable(Product):
     __tablename__ = "variable"
     id: Mapped[int] = mapped_column(ForeignKey("product.id"), primary_key=True)
     symbol: Mapped[str] = mapped_column(unique=True)
-    attributes: Mapped["VariableAttributes"] = relationship(back_populates="variable")
+    attributes: Mapped["VariableAttributes"] = relationship(back_populates="variable", lazy='selectin')
     values: Mapped[List["VariableValue"]] = relationship(back_populates="variable")
     __mapper_args__ = {
         "polymorphic_identity": "variable",
@@ -343,7 +343,11 @@ class VariableAttributes(Base):
     __tablename__ = "variableattributes"
     id: Mapped[int] = mapped_column(primary_key=True)
     variableId: Mapped[int] = mapped_column(ForeignKey("variable.id"))
-    unitsOutstanding: Mapped[Optional[int]]
+    fee: Mapped[Optional[int]] = mapped_column() # in basis points
+    liquidity: Mapped[Optional[int]] = mapped_column() # in basis points
+    distribution: Mapped[schemas.Frequency] = mapped_column(default=schemas.Frequency.NONE)
+    minAmount: Mapped[Optional[int]] = mapped_column() # in money value (100 = 1 currency unit)
+    divYield: Mapped[Optional[int]] = mapped_column() # in basis points
 
     variable: Mapped["Variable"] = relationship(back_populates="attributes")
 
