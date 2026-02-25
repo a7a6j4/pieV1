@@ -1,8 +1,9 @@
+from operator import and_
 from click import utils
 from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Query, Path, Body
 from database import db
-from sqlalchemy import select, update, delete, func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select, update, delete, func, or_
+from sqlalchemy.orm import Session, joinedload, selectinload, with_polymorphic
 from typing import Optional, Annotated, Union, List
 import model
 import yfinance as yf
@@ -82,40 +83,50 @@ async def getProduct(
 
     return product
   else:
-    base_query = db.query(model.Product).where(model.Product.isActive == True)
+    products = with_polymorphic(model.Product, [model.Variable, model.Deposit])
+    base_query = select(products).where(products.isActive == True)
 
     if income:
-      base_query = base_query.filter(model.Variable.attributes.distribution != schemas.Frequency.NONE)
-    if incomeFrequency is not None:
-      base_query = base_query.filter(model.Variable.attributes.distribution == incomeFrequency)
+      base_query = base_query.where(or_(model.Variable.attributes.has(model.VariableAttributes.distribution != schemas.Frequency.NONE), model.Deposit.fixed == True))
+    if incomeFrequency:
+      if incomeFrequency == schemas.Frequency.NONE:
+        base_query = base_query.where(or_(model.Variable.attributes.has(model.VariableAttributes.distribution == incomeFrequency)))
+      if incomeFrequency == schemas.Frequency.MONTHLY:
+        base_query = base_query.where(or_(model.Variable.attributes.has(model.VariableAttributes.distribution == incomeFrequency), model.Deposit.maxTenor <= 30))
+      if incomeFrequency == schemas.Frequency.QUARTERLY:
+        base_query = base_query.where(or_(model.Variable.attributes.has(model.VariableAttributes.distribution == incomeFrequency), model.Deposit.maxTenor.in_([90, 91, 92])))
+      if incomeFrequency == schemas.Frequency.ANNUALLY:
+        base_query = base_query.where(or_(model.Variable.attributes.has(model.VariableAttributes.distribution == incomeFrequency), model.Deposit.maxTenor.in_([364, 365, 366])))
+      if incomeFrequency == schemas.Frequency.SEMIANNUALLY:
+        base_query = base_query = base_query.where(or_(model.Variable.attributes.has(model.VariableAttributes.distribution == incomeFrequency), model.Deposit.maxTenor.in_([180, 181, 182])))
     if productClass:
-      base_query = base_query.filter(model.Product.productClass == productClass)
+      base_query = base_query.where(products.productClass == productClass)
     if type:
-      base_query = base_query.filter(model.Product.category == type)
+      base_query = base_query.where(products.category == type)
     if assetClass:
-      base_query = base_query.filter(model.Product.assetClass == assetClass)
+      base_query = base_query.where(products.assetClass == assetClass)
     if currency:
-      base_query = base_query.filter(model.Product.currency == currency)
+      base_query = base_query.where(products.currency == currency)
     if isActive:
-      base_query = base_query.filter(model.Product.isActive == isActive)
+      base_query = base_query.where(products.isActive == isActive)
     if productGroupId:
-      base_query = base_query.filter(model.Product.productGroupId == productGroupId)
+      base_query = base_query.where(products.productGroupId == productGroupId)
     if benchmarkId:
-      base_query = base_query.filter(model.Product.benchmarkId == benchmarkId)
+      base_query = base_query.where(products.benchmarkId == benchmarkId)
     if riskLevel:
-      base_query = base_query.filter(model.Product.riskLevel == riskLevel)
+      base_query = base_query.where(products.riskLevel == riskLevel)
     if horizon:
-      base_query = base_query.filter(model.Product.horizon == horizon)
+      base_query = base_query.where(products.horizon == horizon)
     if maxHorizon:
-      base_query = base_query.filter(model.Product.horizon <= maxHorizon)
+      base_query = base_query.where(products.horizon <= maxHorizon)
     if minHorizon:
-      base_query = base_query.filter(model.Product.horizon >= minHorizon)
+      base_query = base_query.where(products.horizon >= minHorizon)
     if minTenor:
-      base_query = base_query.filter(model.Product.horizon >= minTenor)
+      base_query = base_query.where(model.Deposit.minTenor >= minTenor)
     if maxTenor:
-      base_query = base_query.filter(model.Product.horizon <= maxTenor)
+      base_query = base_query.where(model.Deposit.maxTenor <= maxTenor)
 
-    return base_query.offset((page - 1) * limit).limit(limit).options(joinedload(model.Variable.attributes)).all()
+    return db.execute(base_query.offset((page - 1) * limit).limit(limit)).scalars().all()
 
 @product.post("/issuer", status_code=status.HTTP_201_CREATED)
 async def createIssuer(db: db, issuer_data: schemas.IssuerCreate = Depends(schemas.IssuerCreate.from_issuer_base)):
