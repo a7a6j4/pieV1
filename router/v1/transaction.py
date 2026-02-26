@@ -118,7 +118,7 @@ async def getTransactionCoverage(
     consideration: dict = Depends(getTransactionConsideration),
 ):
     # balance = wallet["balance"]
-    balance = wallet.data.availableBalance
+    balance = wallet.get("availableBalance", 0.00)
     # check if user has sufficient funds
     if balance < consideration["totalConsideration"]:
         raise HTTPException(

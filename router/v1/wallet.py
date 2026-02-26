@@ -67,8 +67,8 @@ async def getWalletBalance(
   # balance = schemas.AnchorBalanceResponse(**balance_request.json())
   # return balance
   return {
-    "availableBalance": 0.00,
-    "ledgerBalance": 0.00,
+    "availableBalance": 10000000000.00,
+    "ledgerBalance": 10000000000.00,
     "hold": 0.00,
     "pending": 0.00,
   }
