@@ -89,6 +89,8 @@ class WealthObjective(Base):
         server_default=func.now(), onupdate=func.now()
     )
 
+    portfolios: Mapped[List["Portfolio"]] = relationship()
+
 class UserAddress(Base):
     __tablename__ = "useraddress"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -408,7 +410,7 @@ class Portfolio(Base):
     deleted: Mapped[bool] = mapped_column(default=False)
     user: Mapped["User"] = relationship(back_populates="portfolios")
     wealthObjectiveId: Mapped[Optional[int]] = mapped_column(ForeignKey("wealthobjective.id"))
-    wealthObjective: Mapped["WealthObjective"] = relationship(back_populates="portfolios")
+    wealthObjective: Mapped["WealthObjective"] = relationship(back_populates="portfolios", lazy='selectin')
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="portfolios")
