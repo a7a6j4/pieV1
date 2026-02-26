@@ -145,7 +145,7 @@ async def completeRiskQuestionnaire(db: db, data: schemas.RiskProfileCreate, use
 
     return user.riskProfile
 
-from .portfolio import getPortfolioValue
+from .portfolio import getPortfolioAssets, getPortfolioValue
 
 @user.patch("/risk", response_model=schemas.RiskProfileSchema)
 async def updateRiskProfile(db: db, data: schemas.RiskProfileUpdate, user: Annotated[model.User, Depends(getUser)]):
@@ -366,9 +366,9 @@ async def get_user_value(db: db, user = Depends(auth.getActiveUser)):
     total_ngn = 0
 
     for portfolio in user.portfolios:
-        portfolio_value = await getPortfolioValue(db, portfolio)
-        total_usd += portfolio_value["total_value_usd"]
-        total_ngn += portfolio_value["total_value_ngn"]
+        portfolio_value = await getPortfolioValue(db, assets=await getPortfolioAssets(db, portfolio=portfolio))
+        total_usd += portfolio_value.get("totalValueUsd", 0.00)
+        total_ngn += portfolio_value.get("totalValueNgn", 0.00)
 
     # get value of all products in portfolio with product risk <= 1
     
@@ -443,7 +443,8 @@ async def getUserValue(db: db, user = Depends(auth.getActiveUser)):
     total_value_ngn = 0
     total_value_usd = 0
     for portfolio in user.portfolios:
-        portfolio_value = await getPortfolioValue(db, portfolio)
+        portfolio_assets = await getPortfolioAssets(db, portfolio=portfolio)
+        portfolio_value = await getPortfolioValue(db=db, assets=portfolio_assets)
         total_value_ngn += portfolio_value.get("totalValueNgn")
         total_value_usd += portfolio_value.get("totalValueUsd")
 
@@ -451,3 +452,9 @@ async def getUserValue(db: db, user = Depends(auth.getActiveUser)):
         "totalValueNgn": total_value_ngn,
         "totalValueUsd": total_value_usd
     }
+
+@user.get("/risk-profile")
+async def getUserRiskProfile(db: db, user: Annotated[model.User, Depends(auth.getActiveUser)]):
+    if user.riskProfile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk profile not found")
+    return user

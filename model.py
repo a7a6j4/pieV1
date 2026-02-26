@@ -84,6 +84,7 @@ class WealthObjective(Base):
     title: Mapped[str]
     category: Mapped[schemas.WealthObjectiveCategory]
     portfolioType: Mapped[schemas.PortfolioType]
+    frequency: Mapped[Optional[schemas.Frequency]]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()

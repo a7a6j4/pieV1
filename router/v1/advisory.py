@@ -12,7 +12,7 @@ from ..v1.portfolio import getPortfolioValue, getPortfolio, getPortfolioAssets
 from typing import Annotated, Optional, Union
 from utils.assesment import runAssesment
 from ..v1.transaction import getWalletBalance
-from ..v1.user import getUser, getUserValue
+from ..v1.user import getUser, getUserRiskProfile, getUserValue
 import enum
 from fastapi import Query
 from decimal import Decimal
@@ -624,49 +624,99 @@ async def createWealthObjective(db: db, objective: schemas.WealthObjectiveCreate
 
 
 async def getIndependenceRequiredInvestment(db: db, user: model.User):
+
+  age = relativedelta(datetime.now(), user.dateOfBirth).years
+  years_to_retirement = 60 - age
+
   # get total assets value 
   total_assets = await getUserValue(db, user)
   total_value_usd = total_assets.get("totalValueUsd")
   total_value_ngn = total_assets.get("totalValueNgn")
   # get annual income
   annual_income = user.riskProfile.monthly_income * 12 if user.riskProfile.monthly_income is not None else 0
-  # calculate required investment in usd
-  required_investment_usd = annual_income / 0.20
-  # calculate required investment in ngn
-  required_investment_ngn = required_investment_usd * 1600
+
+  if user.riskProfile.primary_income_currency == schemas.Currency.USD:
+    required_investment = float(annual_income) / 0.02
+    difference = required_investment - total_value_usd
+    usd_long_term_inflation = 0.02
+    fv = npf.fv(usd_long_term_inflation, years_to_retirement, 0, -difference)
+  elif user.riskProfile.primary_income_currency == schemas.Currency.NGN:
+    required_investment = float(annual_income) / 0.18
+    difference = required_investment - total_value_ngn
+    ngn_long_term_inflation = 0.10
+    fv = npf.fv(ngn_long_term_inflation, years_to_retirement, 0, -difference)
+
+  else:
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid risk profile")
+
   return {
-    "requiredInvestmentUsd": required_investment_usd,
-    "requiredInvestmentNgn": required_investment_ngn
+    "requiredFutureValue": fv,
+    "currency": user.riskProfile.primary_income_currency,
+    "yearsToRetirement": years_to_retirement,
+    "requiredInvestment": required_investment,
   }
 
-@advisory.get("/portfolio-recommendation", dependencies=[Depends(checkKycVerification)])
-async def getPortfolioRecommendation(db: db, portfolio: model.Portfolio = Depends(getPortfolio)):
+@advisory.get("/portfolio-recommendation", )
+async def getPortfolioRecommendation(db: db, user: Annotated[model.User, Depends(getUserRiskProfile)]):
 
-  user_id = portfolio.user.id
+  user_portfolios = user.portfolios
+  portfolio_ids = [portfolio.wealthObjectiveId for portfolio in user_portfolios if portfolio.wealthObjectiveId is not None]
 
-  first = select(model.Portfolio).where(model.Portfolio.userId == user_id, model.Portfolio.wealthObjectiveId != None).subquery()
-  second = select(model.WealthObjective).where(model.WealthObjective.id.not_in(first.c.wealthObjectiveId))
-  recommended = db.execute(second).scalars().all()
+  recommended = select(model.WealthObjective).where(model.WealthObjective.id.not_in(portfolio_ids))
+  recommended = db.execute(recommended).scalars().all()
 
   result = []
+  required_investment = await getIndependenceRequiredInvestment(db, user)
 
   for objective in recommended:
-    if objective.category == schemas.WealthObjectiveCategory.INDEPENDENCE:
+    if objective.category == schemas.WealthObjectiveCategory.RETIREMENT:
       # calulate independence required investment
-      target_date = portfolio.user.dateOfBirth + relativedelta(years=60)
-      # get total assets value 
-      total_assets = await getUserValue(db, portfolio.user)
-      total_value_usd = total_assets.get("totalValueNgn")
-      # get annual income
-      annual_income = portfolio.user.riskProfile.monthly_income * 12
-      # calculate required investment
-      required_investment = annual_income / 0.20
-      # calculate required investment gap
-      required_investment_gap = required_investment - total_assets
       result.append({
         "objective": objective,
-        # "requiredInvestment": requiredInvestment
+        "amount": required_investment.get("requiredFutureValue"),
+        "timeToTarget": required_investment.get("yearsToRetirement"),
+        "currency": required_investment.get("currency"),
+        "targetDate": datetime.now() + relativedelta(years=required_investment.get("yearsToRetirement"))
       })
 
-  return result
+    if objective.category == schemas.WealthObjectiveCategory.INDEPENDENCE:
+      result.append({
+        "objective": objective,
+        "amount": required_investment.get("requiredInvestment"),
+        "currency": required_investment.get("currency"),
+      })
+
+    if objective.category == schemas.WealthObjectiveCategory.NRENT:
+
+      annual_rent = user.riskProfile.annual_rent
+
+      result.append({
+        "objective": objective,
+        "amount": annual_rent,
+        "currency": user.riskProfile.primary_income_currency,
+        "targetDate": datetime.now() + relativedelta(years=1)
+      })
+
+    if objective.category == schemas.WealthObjectiveCategory.ARENT:
+      # get annual rent // estimated annual rent
+      annual_rent = user.riskProfile.annual_rent
+      result.append({
+        "objective": objective,
+        "amount": annual_rent,
+        "currency": user.riskProfile.primary_income_currency,
+      })
+
+    if objective.category == schemas.WealthObjectiveCategory.MEXPENSE:
+
+      # 40% of monthly income as estimated basic living expenses
+      pass
+
+
+  return {  
+    "result": result,
+    "recommended": recommended
+
+  }
+
+
 

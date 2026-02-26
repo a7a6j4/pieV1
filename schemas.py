@@ -1323,3 +1323,4 @@ class WealthObjectiveCreate(BaseModel):
   title: str
   category: WealthObjectiveCategory
   portfolioType: PortfolioType
+  frequency: Frequency
