@@ -105,6 +105,7 @@ async def getProduct(
         img_url = await get_file(bucket_name="product", file_name=product.img)
         product.img = img_url
       except Exception as e:
+        print(e)
         pass
 
     return product

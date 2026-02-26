@@ -24,11 +24,20 @@ minio_public_client = Minio(
     secure=_public_secure
 )
 
+def _normalize_object_name(object_name: str) -> str:
+    normalized = object_name.strip().lstrip("/")
+    if not normalized:
+        raise ValueError("Object name cannot be empty")
+    if normalized.endswith("/"):
+        raise ValueError("Object name must not end with '/'")
+    return normalized
+
 async def upload_file(
   bucket_name: str, 
   file_object,
   file_name: str,
   content_type: str):
+    file_name = _normalize_object_name(file_name)
 
     file_object.seek(0,2)
     file_size = file_object.tell()
@@ -54,17 +63,12 @@ async def upload_file(
       raise Exception(f"Failed to upload file: {e}")
 
 async def get_file(bucket_name: str, file_name: str):
-    print(_public_endpoint)
-    print(_public_secure)
-    print(bucket_name)
-    print(file_name)
+    file_name = _normalize_object_name(file_name)
     try:
       url = minio_public_client.presigned_get_object(bucket_name=bucket_name, object_name=file_name)
-      print(url)
       return url
     except Exception as e:
-      print(e)
-      return None
+      raise Exception(f"Failed to get file: {e}")
     
 def download_s3_object(bucket_name: str, object_name: str):
     """
@@ -73,6 +77,7 @@ def download_s3_object(bucket_name: str, object_name: str):
     Returns:
         bytes: The file content as bytes
     """
+    object_name = _normalize_object_name(object_name)
     try:
         response = minio_client.get_object(bucket_name, object_name)
         file_data = response.read()
@@ -89,6 +94,7 @@ async def download_s3_object_for_requests(bucket_name: str, file_name: str, cont
     Returns:
         tuple: (filename, file_object, content_type) ready for requests files parameter
     """
+    file_name = _normalize_object_name(file_name)
     try:
         response = minio_client.get_object(bucket_name, file_name)
         file_data = response.read()
@@ -124,6 +130,7 @@ def get_file_object(bucket_name: str, object_name: str) -> Dict[str, Any]:
     Returns:
         dict: {filename, content_type, size, etag, last_modified, file_obj}
     """
+    object_name = _normalize_object_name(object_name)
     try:
         stat = minio_client.stat_object(bucket_name, object_name)
         response = minio_client.get_object(bucket_name, object_name)
