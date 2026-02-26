@@ -54,8 +54,18 @@ async def upload_file(
       raise Exception(f"Failed to upload file: {e}")
 
 async def get_file(bucket_name: str, file_name: str):
-  return minio_public_client.presigned_get_object(bucket_name=bucket_name, object_name=file_name)
-
+    print(_public_endpoint)
+    print(_public_secure)
+    print(bucket_name)
+    print(file_name)
+    try:
+      url = minio_public_client.presigned_get_object(bucket_name=bucket_name, object_name=file_name)
+      print(url)
+      return url
+    except Exception as e:
+      print(e)
+      return None
+    
 def download_s3_object(bucket_name: str, object_name: str):
     """
     Download an S3 object and return as bytes
