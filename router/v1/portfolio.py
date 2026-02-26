@@ -462,3 +462,4 @@ async def getPortfolioAdvice(db: db, portfolio: model.Portfolio = Depends(getPor
         pass
 
 # def generate_schedule_dates(start_date: datetime, frequency: schemas.Frequency, duration: int)
+

@@ -1307,3 +1307,19 @@ tenor_map = {
   Frequency.SEMIANNUALLY: 180,
   Frequency.ANNUALLY: 365,
 }
+
+class WealthObjectiveCategory(enum.Enum):
+    NRENT = "nextRent"
+    INDEPENDENCE = "independence"
+    RETIREMENT = "retirement"
+    EMERGENCY = "emergency"
+    ARENT = "rent"
+    HOME = "home"
+    MEXPENSE = "monthlyExpense"
+    AEXPENSE = "annualExpense"
+    OTHER = "other"
+
+class WealthObjectiveCreate(BaseModel):
+  title: str
+  category: WealthObjectiveCategory
+  portfolioType: PortfolioType

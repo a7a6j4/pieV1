@@ -78,6 +78,17 @@ class User(Base):
     kyc: Mapped[Optional["Kyc"]] = relationship(back_populates="user", lazy='selectin')
     anchor_user: Mapped[Optional["AnchorUser"]] = relationship(back_populates="user", lazy='selectin')
 
+class WealthObjective(Base):
+    __tablename__ = "wealthobjective"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str]
+    category: Mapped[schemas.WealthObjectiveCategory]
+    portfolioType: Mapped[schemas.PortfolioType]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+
 class UserAddress(Base):
     __tablename__ = "useraddress"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -396,6 +407,8 @@ class Portfolio(Base):
     description: Mapped[Optional[str]]
     deleted: Mapped[bool] = mapped_column(default=False)
     user: Mapped["User"] = relationship(back_populates="portfolios")
+    wealthObjectiveId: Mapped[Optional[int]] = mapped_column(ForeignKey("wealthobjective.id"))
+    wealthObjective: Mapped["WealthObjective"] = relationship(back_populates="portfolios")
 
     # Relationships
     user: Mapped["User"] = relationship(back_populates="portfolios")

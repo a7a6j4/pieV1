@@ -437,3 +437,17 @@ async def getFileAsBase64(user_id: str, type: schemas.UserDocumentType):
             "file_name": file_name,
             "type": type.value
         }
+
+@user.get("/value")
+async def getUserValue(db: db, user = Depends(auth.getActiveUser)):
+    total_value_ngn = 0
+    total_value_usd = 0
+    for portfolio in user.portfolios:
+        portfolio_value = await getPortfolioValue(db, portfolio)
+        total_value_ngn += portfolio_value.get("totalValueNgn")
+        total_value_usd += portfolio_value.get("totalValueUsd")
+
+    return {
+        "totalValueNgn": total_value_ngn,
+        "totalValueUsd": total_value_usd
+    }

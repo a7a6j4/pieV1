@@ -33,12 +33,39 @@ product = APIRouter(
     tags=["product"]
 )
 
+@product.get('/search', dependencies=[Depends(readUser)])
+async def searchProducts(
+  db: db,
+  keyword: str = Query(..., min_length=1, description="Search keyword"),
+  page: int = Query(default=1, ge=1),
+  type: Optional[str] = Query(enum=["variable", "deposit"], default=None),
+):
+  search_value = keyword.strip()
+  if not search_value:
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Keyword is required")
+
+  products = with_polymorphic(model.Product, [model.Variable, model.Deposit])
+  base_query = select(products).where(products.isActive == True)
+
+  if type:
+    base_query = base_query.where(products.category == type)
+
+  like_value = f"%{search_value}%"
+  base_query = base_query.where(
+    or_(
+      products.title.ilike(like_value),
+      products.description.ilike(like_value)
+    )
+  )
+
+  return db.execute(base_query.offset((page - 1) * 10)).scalars().all()
+
 @product.get('/', dependencies=[Depends(readUser)])
 async def getProduct(
   db: db,
   productId: Optional[int] = Query(default=None, description="Product ID"),
   productClass: Optional[schemas.ProductClass] = Query(default=None),
-  page: Optional[int] = Query(default=1),
+  page: Optional[int] = Query(default=1, ge=1),
   type: Optional[str] = Query(enum=["variable", "deposit"], default=None),
   assetClass: Optional[schemas.AssetClassType] = Query(default=None),
   currency: Optional[schemas.Currency] = Query(default=None),
@@ -52,7 +79,6 @@ async def getProduct(
   interestPay: Optional[schemas.InterestPay] = Query(default=None),
   penalty: Optional[int] = Query(default=None),
   fixed: Optional[bool] = Query(default=None),
-  limit: Optional[int] = Query(default=10),
   minHorizon: Optional[int] = Query(default=None),
   maxHorizon: Optional[int] = Query(default=None),
   income: Optional[bool] = Query(default=None),
@@ -126,7 +152,7 @@ async def getProduct(
     if maxTenor:
       base_query = base_query.where(model.Deposit.maxTenor <= maxTenor)
 
-    return db.execute(base_query.offset((page - 1) * limit).limit(limit)).scalars().all()
+    return db.execute(base_query.offset((page - 1) * 10)).scalars().all()
 
 @product.post("/issuer", status_code=status.HTTP_201_CREATED)
 async def createIssuer(db: db, issuer_data: schemas.IssuerCreate = Depends(schemas.IssuerCreate.from_issuer_base)):

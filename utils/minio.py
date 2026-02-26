@@ -11,7 +11,17 @@ minio_client = Minio(
     settings.MINIO_ENDPOINT,
     access_key=settings.MINIO_ACCESS_KEY,
     secret_key=settings.MINIO_SECRET_KEY,
-    secure=False
+    secure=settings.MINIO_SECURE
+)
+
+# Use public endpoint for generated URLs/presigned links when provided.
+_public_endpoint = settings.MINIO_PUBLIC_ENDPOINT or settings.MINIO_ENDPOINT
+_public_secure = settings.MINIO_PUBLIC_SECURE if settings.MINIO_PUBLIC_ENDPOINT else settings.MINIO_SECURE
+minio_public_client = Minio(
+    _public_endpoint,
+    access_key=settings.MINIO_ACCESS_KEY,
+    secret_key=settings.MINIO_SECRET_KEY,
+    secure=_public_secure
 )
 
 async def upload_file(
@@ -38,12 +48,13 @@ async def upload_file(
             length=file_size,
             content_type=content_type
         )
-        return f"{settings.MINIO_ENDPOINT}/{bucket_name}/{file_name}"
+        protocol = "https" if _public_secure else "http"
+        return f"{protocol}://{_public_endpoint}/{bucket_name}/{file_name}"
     except Exception as e:
       raise Exception(f"Failed to upload file: {e}")
 
 async def get_file(bucket_name: str, file_name: str):
-  return minio_client.presigned_get_object(bucket_name=bucket_name, object_name=file_name)
+  return minio_public_client.presigned_get_object(bucket_name=bucket_name, object_name=file_name)
 
 def download_s3_object(bucket_name: str, object_name: str):
     """

@@ -1,7 +1,11 @@
 from pydantic_settings import BaseSettings
+from typing import Optional
 
 class Settings(BaseSettings):
     MINIO_ENDPOINT: str
+    MINIO_SECURE: bool = False
+    MINIO_PUBLIC_ENDPOINT: Optional[str] = None
+    MINIO_PUBLIC_SECURE: bool = True
     MINIO_ACCESS_KEY: str
     MINIO_SECRET_KEY: str
     ANCHOR_API_KEY_SANDBOX: str
