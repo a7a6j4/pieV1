@@ -1,6 +1,6 @@
 from operator import and_
 from click import utils
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, status, Query, Path, Body
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, UploadFile, status, Query, Path, Body
 from database import db
 from sqlalchemy import select, update, delete, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload, with_polymorphic
@@ -652,3 +652,14 @@ async def createBenchmark(db: db, benchmark: schemas.BenchmarkCreate):
   db.commit()
   db.refresh(new_benchmark)
   return new_benchmark
+
+@product.post('/image')
+async def uploadProductLogo(db: db, file: UploadFile, product: model.Product = Depends(getProduct)):
+  file_name = f"logo/{product.title.replace(' ', '_')}.{file.filename.split('.')[-1]}"
+  try:
+    await upload_file(bucket_name="product", file_object=file.file, file_name=file_name, content_type=file.content_type)
+    db.execute(update(model.Product).where(model.Product.id == product.id).values(img=file_name))
+    db.commit()
+    return {"message": "File uploaded successfully", "file_name": file_name}
+  except Exception as e:
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to upload file: {e}")
