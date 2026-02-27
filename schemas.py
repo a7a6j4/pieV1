@@ -1265,6 +1265,7 @@ class WalletGroupCreate(BaseModel):
   description: Optional[str] = None
   currency: Currency
   receivableAccountId: int
+  holdingAccountId: int
 
 
 class AnchorBalanceData(BaseModel):

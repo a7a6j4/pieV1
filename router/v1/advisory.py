@@ -2,7 +2,7 @@ import math
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import SecurityScopes
 from sqlalchemy import select, update, delete, func, and_, or_, not_, desc, asc, extract, case
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload, with_polymorphic
 from datetime import datetime, timedelta
 from database import db
 import model
@@ -558,7 +558,7 @@ async def getPortfolioAllocation(db: db, portfolio: model.Portfolio = Depends(ge
 @advisory.get("/new-portfolio")
 async def getNewPortfolioAllocation(
   db: db,
-  portfolio: model.Portfolio = Depends(getPortfolio) 
+  portfolio: model.Portfolio = Depends(getPortfolio), 
   ):
 
   if portfolio.type == schemas.PortfolioType.INCOME:
@@ -590,29 +590,38 @@ async def getNewPortfolioAllocation(
     # get highest expected return variable product
 
       duration = portfolio.duration
-      if portfolio.target is not None:
-        if portfolio.target.targetDate is not None:
+
+      base_model = with_polymorphic(model.Product, [model.Variable, model.Deposit])
+      base_query = select(base_model).where(base_model.isActive == True)
+      
+      if portfolio.target:
+
+        base_query = base_query.where(base_model.currency == portfolio.target.currency)
+        if portfolio.target.targetDate:
 
           target_date = portfolio.target.targetDate
           days_diff = relativedelta(target_date, datetime.now()).days
 
+
           if days_diff <= 365:
             # get highest return deposit or mutual fund return
-            pass
+            products = db.execute(base_query.where(base_model.horizon <= 1).limit(3)).scalars().all()
 
           elif days_diff > 365 and days_diff <= 1095:
             # get highest return variable product
-            pass
+            products = db.execute(base_query.where(base_model.horizon > 1, base_model.horizon <= 3).limit(3)).scalars().all()
+
+          elif days_diff > 1095 and days_diff <= 2190:
+
+            products = db.execute(base_query.where(base_model.horizon > 3, base_model.horizon <= 5).limit(3)).scalars().all()
 
           else:
+            products = db.execute(base_query.where(base_model.horizon > 5).limit(3)).scalars().all()
+          
+      else: 
+        products = db.execute(base_query.where(base_model.horizon == portfolio.duration).limit(3)).scalars().all()
 
-            pass
-
-
-
-          pass
-        else: 
-          pass
+      return products
 
 @advisory.post("/wealth-objective")
 async def createWealthObjective(db: db, objective: schemas.WealthObjectiveCreate):

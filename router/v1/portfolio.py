@@ -181,7 +181,7 @@ async def getPortfolioValue(
     assets_list = []
 
     for asset in assets.get("variable_assets", []):
-        if asset["Variable"].productGroup.productClass == schemas.ProductClass.EQUITY and asset["Variable"].productGroup.market == schemas.Country.NG:
+        if asset["Variable"].productClass == schemas.ProductClass.EQUITY and asset["Variable"].productGroup.market == schemas.Country.NG:
             value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == asset["Variable"].id).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
             price = value.price / 100
             current_value = asset["net_units"] * price
@@ -196,7 +196,7 @@ async def getPortfolioValue(
                 "performance": performance,
                 "category": "variable",
             })
-        elif asset["Variable"].productGroup.productClass == schemas.ProductClass.EQUITY and asset["Variable"].productGroup.market == schemas.Country.US:
+        elif asset["Variable"].productClass in [schemas.ProductClass.EQUITY, schemas.ProductClass.ETF] and asset["Variable"].productGroup.market == schemas.Country.US:
             price = await getPrice(db=db, variable_id=asset["Variable"].id)
             performance = (price / asset["vwac"]) - 1
             assets_list.append({
@@ -208,7 +208,7 @@ async def getPortfolioValue(
                 "performance": performance,
                 "category": "variable",
             })
-        elif asset["Variable"].productGroup.productClass == schemas.ProductClass.MUTUAL_FUND:
+        elif asset["Variable"].productClass == schemas.ProductClass.MUTUAL_FUND:
             pass
 
     for deposit in assets.get("deposits", []):

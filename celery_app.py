@@ -498,14 +498,14 @@ async def executePurchaseTransaction(transaction_id: int):
     
     try:
         # create transaction journal
-        transaction_journal = transaction.journal
+        transaction_journal = model.Journal(date=datetime.now())
 
         # credit portfolio for consideration
         portfolio_entry = model.JournalEntry(
             accountId=57 if transaction.product.currency == schemas.Currency.USD else 12,
             amount=transaction.amount,
             side=schemas.EntrySide.CREDIT,
-            description=f"{transaction.product.productGroup.productClass.value} transaction"
+            description=f"{transaction.product.title} transaction"
         )
 
         # debit asset holding for consideration
@@ -513,7 +513,7 @@ async def executePurchaseTransaction(transaction_id: int):
             accountId=transaction.product.productGroup.assetAccountId,
             amount=transaction.amount,
             side=schemas.EntrySide.DEBIT,
-            description=f"{transaction.product.productGroup.productClass.value} transaction"
+            description=f"{transaction.product.title} transaction"
         )
         transaction_journal.entries.append(portfolio_entry)
         transaction_journal.entries.append(asset_holding_entry)
@@ -579,7 +579,8 @@ def bookPortfolioDepositTask(self, deposit_transaction_id: int):
     Book portfolio deposit task
     """
     try:
-        asyncio.run(executePurchaseTransaction(deposit_transaction_id))
+        result = asyncio.run(executePurchaseTransaction(deposit_transaction_id))
+        return result
     except Exception as e:
         logger.error(f"Failed to book portfolio deposit for deposit_transaction_id: {deposit_transaction_id}: {str(e)}")
 
@@ -594,7 +595,8 @@ def executeNGXTransactionTask(self, portfolio_transaction_id: int):
     """
     try:
         # call NGX API to execute transaction
-        asyncio.run(executePurchaseTransaction(portfolio_transaction_id))
+        result = asyncio.run(executePurchaseTransaction(portfolio_transaction_id))
+        return result
     except Exception as e:
         logger.error(f"Failed to execute NGX transaction for portfolio_transaction_id: {portfolio_transaction_id}: {str(e)}")
 
@@ -609,7 +611,8 @@ def executeAlpacaTransactionTask(self, portfolio_transaction_id: int):
     """
     try:
         # call alpaca API to execute transaction
-        asyncio.run(executePurchaseTransaction(portfolio_transaction_id))
+        result = asyncio.run(executePurchaseTransaction(portfolio_transaction_id))
+        return result
     except Exception as e:
         logger.error(f"Failed to execute Alpaca transaction for portfolio_transaction_id: {portfolio_transaction_id}: {str(e)}")
 
@@ -623,6 +626,7 @@ def executeMutualFundTransactionTask(self, portfolio_transaction_id: int):
     Execute mutual fund transaction task
     """
     try:
-        asyncio.run(executePurchaseTransaction(portfolio_transaction_id))
+        result = asyncio.run(executePurchaseTransaction(portfolio_transaction_id))
+        return result
     except Exception as e:
         logger.error(f"Failed to execute mutual fund transaction for portfolio_transaction_id: {portfolio_transaction_id}: {str(e)}")

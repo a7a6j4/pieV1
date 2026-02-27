@@ -136,10 +136,10 @@ async def executeTransaction(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Transactions already executed")
 
     # separate transactions by product group
-    ng_mutual_funds = list(filter(lambda x: x.product.productGroup.productClass == schemas.ProductClass.MUTUAL_FUND and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
-    ng_deposits = list(filter(lambda x: x.product.productGroup.productClass == schemas.ProductClass.DEPOSIT and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
-    us_stocks = list(filter(lambda x: x.product.productGroup.productClass == schemas.ProductClass.EQUITY and x.product.productGroup.market == schemas.Country.US, batch.portfolio_transactions))
-    ng_stocks = list(filter(lambda x: x.product.productGroup.productClass == schemas.ProductClass.EQUITY and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
+    ng_mutual_funds = list(filter(lambda x: x.product.productClass == schemas.ProductClass.MUTUAL_FUND and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
+    ng_deposits = list(filter(lambda x: x.product.productClass == schemas.ProductClass.DEPOSIT and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
+    us_stocks = list(filter(lambda x: x.product.productClass == schemas.ProductClass.EQUITY and x.product.productGroup.market == schemas.Country.US, batch.portfolio_transactions))
+    ng_stocks = list(filter(lambda x: x.product.productClass == schemas.ProductClass.EQUITY and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
 
     if ng_mutual_funds:
         for mutual_fund_transaction in ng_mutual_funds:
@@ -191,13 +191,13 @@ async def postTransaction(
             amount=accounting_amount,
             type=schemas.TransactionType.INVESTMENT,
             status=schemas.TransactionStatus.COMPLETED,
-            walletId=orderBook["wallet"].id,
+            walletId=1,
             date=datetime.now(),
         )
 
         # debit wallet for consideration
         wallet_entry = model.JournalEntry(
-            accountId=13 if currency == schemas.Currency.USD else 14,
+            accountId=10,
             amount=accounting_amount,
             side=schemas.EntrySide.DEBIT,
             description=f"{order["product"].title} investment purchase consideration"
@@ -231,7 +231,7 @@ async def postTransaction(
                 )
             # debit wallet for fee
                 fee_wallet_entry = model.JournalEntry(
-                    accountId=13 if currency == schemas.Currency.USD else 14,
+                    accountId=10,
                     amount=fee_amount,
                     side=schemas.EntrySide.DEBIT,
                     description=f"{fee} fee",
@@ -291,10 +291,10 @@ async def postTransaction(
     db.commit()
     db.refresh(batch)
     # separate transactions by product group
-    ng_mutual_funds = list(filter(lambda x: x.product.productGroup.productClass == schemas.ProductClass.MUTUAL_FUND and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
-    ng_deposits = list(filter(lambda x: x.product.productGroup.productClass == schemas.ProductClass.DEPOSIT and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
-    us_stocks = list(filter(lambda x: x.product.productGroup.productClass == schemas.ProductClass.EQUITY and x.product.productGroup.market == schemas.Country.US, batch.portfolio_transactions))
-    ng_stocks = list(filter(lambda x: x.product.productGroup.productClass == schemas.ProductClass.EQUITY and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
+    ng_mutual_funds = list(filter(lambda x: x.product.productClass == schemas.Currency.NGN and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
+    ng_deposits = list(filter(lambda x: x.product.productClass == schemas.Currency.NGN and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
+    us_stocks = list(filter(lambda x: x.product.productClass == schemas.Currency.USD and x.product.productGroup.market == schemas.Country.US, batch.portfolio_transactions))
+    ng_stocks = list(filter(lambda x: x.product.productClass == schemas.Currency.NGN and x.product.productGroup.market == schemas.Country.NG, batch.portfolio_transactions))
 
     if ng_mutual_funds:
         for mutual_fund_transaction in ng_mutual_funds:

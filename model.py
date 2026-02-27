@@ -18,6 +18,7 @@ from sqlalchemy import (
     BigInteger
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker, registry
+from sqlalchemy.dialects.postgresql import UUID, ENUM
 from sqlalchemy.sql import func
 from decimal import Decimal
 import enum
@@ -548,7 +549,7 @@ class PortfolioWalletTransactionAssociation(Base):
 
 class TransactionBatch(Base):
     __tablename__ = "transactionbatch"
-    id: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4(), primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, primary_key=True)
     createdAt: Mapped[datetime] = mapped_column(server_default=func.now())
     executed: Mapped[Optional[bool]] = mapped_column(default=False)
     executedAt: Mapped[Optional[datetime]] = mapped_column(server_default=func.now())

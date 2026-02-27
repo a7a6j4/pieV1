@@ -624,8 +624,9 @@ async def getUSPrice(ticker: str):
 
 @product.get('/mutual-fund/price')
 async def getNGMutualFundPrice():
-    mutual_fund_value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == variable.variableId).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
-    return mutual_fund_value.price
+    # mutual_fund_value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == variable.variableId).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
+    # return mutual_fund_value.price
+    return 100.00
 
 @product.get('/price')
 async def getPrice(db: db, variable_id: int):
@@ -633,13 +634,13 @@ async def getPrice(db: db, variable_id: int):
   variable = db.get(model.Variable, variable_id)
   if variable is None:
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Variable {variable_id} not found")
-  if variable.productGroup.productClass == (schemas.ProductClass.EQUITY or schemas.ProductClass.ETF) and variable.productGroup.market == schemas.Country.NG:
+  if variable.productClass in [schemas.ProductClass.EQUITY, schemas.ProductClass.ETF] and variable.productGroup.market == schemas.Country.NG:
     return 100.00
-  elif variable.productGroup.productClass in [schemas.ProductClass.EQUITY, schemas.ProductClass.ETF] and variable.productGroup.market == schemas.Country.US:
+  elif variable.productClass in [schemas.ProductClass.EQUITY, schemas.ProductClass.ETF] and variable.productGroup.market == schemas.Country.US:
     return 5.00
     # return await tiingo.tiingo.getStockPrice(variable.symbol)
     # return await utils.vantage.getUSPrice(variable.symbol)
-  elif variable.productGroup.productClass == schemas.ProductClass.MUTUAL_FUND and variable.productGroup.market == schemas.Country.NG:
+  elif variable.productClass == schemas.ProductClass.MUTUAL_FUND and variable.productGroup.market == schemas.Country.NG:
     return await getNGMutualFundPrice()
   else:
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Variable {variable_id} is not an equity product")
