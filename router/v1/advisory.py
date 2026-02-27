@@ -593,6 +593,7 @@ async def getNewPortfolioAllocation(
 
       base_model = with_polymorphic(model.Product, [model.Variable, model.Deposit])
       base_query = select(base_model).where(base_model.isActive == True)
+      result = []
       
       if portfolio.target:
 
@@ -601,6 +602,7 @@ async def getNewPortfolioAllocation(
 
           target_date = portfolio.target.targetDate
           days_diff = relativedelta(target_date, datetime.now()).days
+          year_duration = days_diff / 365
 
 
           if days_diff <= 365:
@@ -617,11 +619,27 @@ async def getNewPortfolioAllocation(
 
           else:
             products = db.execute(base_query.where(base_model.horizon > 5).limit(3)).scalars().all()
-          
+
+        # pv of target amount
+        pv = npf.pv(0.20 if portfolio.target.currency == schemas.Currency.USD else 0.08, year_duration, 0, -portfolio.target.amount)
+        for product in products:
+            result.append({
+              "product": product,
+              "amount": pv,
+              "product": product,
+              "estAnnualReturn": 0.20 if portfolio.target.currency == schemas.Currency.USD else 0.08
+            })
+        return result
+
       else: 
         products = db.execute(base_query.where(base_model.horizon == portfolio.duration).limit(3)).scalars().all()
-
-      return products
+        for product in products:
+          result.append({
+            "product": product,
+            "estAnnualReturn": 0.20 if portfolio.target.currency == schemas.Currency.USD else 0.08
+          })
+        return products
+        
 
 @advisory.post("/wealth-objective")
 async def createWealthObjective(db: db, objective: schemas.WealthObjectiveCreate):
