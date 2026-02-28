@@ -618,6 +618,7 @@ async def getNewPortfolioAllocation(
             "days": days
           }
 
+
           if days_diff <= 365:
             # get highest return deposit or mutual fund return
             products = db.execute(base_query.where(base_model.horizon <= 1).limit(3)).scalars().all()
@@ -641,7 +642,7 @@ async def getNewPortfolioAllocation(
               "amount": pv,
               "estAnnualReturn": 8 if portfolio.target.currency == schemas.Currency.USD else 20
             })
-        return {"recomendation": result, "growth_duration": growth_duration}
+        return {"recomendation": result, "growthDuration": growth_duration}
 
       else: 
         products = db.execute(base_query.where(base_model.horizon == portfolio.duration).limit(3)).scalars().all()
