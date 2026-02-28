@@ -588,7 +588,6 @@ async def getNewPortfolioAllocation(
 
     products = base_query.limit(3).scalars().all()
 
-    products_result = []
 
     for product in products:
       recomendation = {
@@ -599,8 +598,8 @@ async def getNewPortfolioAllocation(
         target_income = portfolio.income.amount
         recomendation["requiredInvestment"] = target_income / (((product.rate if product.category == schemas.ProductClass.DEPOSIT else 200 if product.currency == schemas.Currency.USD else 80) / 100) * (tenor / 365))
       
-      products_result.append(recomendation)
-    return products_result
+      result.append(recomendation)
+    return {"recomendation": result}
 
   elif portfolio.type in [schemas.PortfolioType.TARGET, schemas.PortfolioType.GROWTH, schemas.PortfolioType.INVEST]:
 
@@ -614,8 +613,17 @@ async def getNewPortfolioAllocation(
 
           target_date = portfolio.target.targetDate
           days_diff = relativedelta(target_date, datetime.now()).days
-          year_duration = days_diff / 365
 
+          # get time difference in x year(s), x month(s) and x day(s)
+          years = math.floor(days_diff / 365)
+          months = math.floor((days_diff % 365) / 30)
+          days = days_diff % 30
+
+          growth_duration = {
+            "years": years,
+            "months": months,
+            "days": days
+          }
 
           if days_diff <= 365:
             # get highest return deposit or mutual fund return
@@ -641,7 +649,7 @@ async def getNewPortfolioAllocation(
               "product": product,
               "estAnnualReturn": 0.20 if portfolio.target.currency == schemas.Currency.USD else 0.08
             })
-        return result
+        return {"recomendation": result, "growth_duration": growth_duration}
 
       else: 
         products = db.execute(base_query.where(base_model.horizon == portfolio.duration).limit(3)).scalars().all()
@@ -650,7 +658,7 @@ async def getNewPortfolioAllocation(
             "product": product,
             "estAnnualReturn": 0.20 if portfolio.target.currency == schemas.Currency.USD else 0.08
           })
-        return products
+        return {"recomendation": result}
         
 
 @advisory.post("/wealth-objective")
