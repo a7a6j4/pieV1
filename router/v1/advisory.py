@@ -579,7 +579,8 @@ async def getNewPortfolioAllocation(
       print(target_income)
       requiredInvestments = list(map(lambda x: {
         "product": x,
-        "requiredInvestment": target_income / x.rate * 100 / (tenor / 365)
+        "requiredInvestment": target_income / x.rate * 100 / (tenor / 365),
+        "estAnnualReturn": x.rate if x.category == schemas.ProductClass.DEPOSIT else 0.20 if x.currency == schemas.Currency.USD else 0.08
       }, depositProducts))
       return requiredInvestments
 
@@ -588,8 +589,6 @@ async def getNewPortfolioAllocation(
   elif portfolio.type in [schemas.PortfolioType.TARGET, schemas.PortfolioType.GROWTH, schemas.PortfolioType.INVEST]:
 
     # get highest expected return variable product
-
-      duration = portfolio.duration
 
       base_model = with_polymorphic(model.Product, [model.Variable, model.Deposit])
       base_query = select(base_model).where(base_model.isActive == True)
