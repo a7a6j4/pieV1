@@ -569,7 +569,7 @@ async def getNewPortfolioAllocation(
     base_query = base_query.where(base_model.currency == portfolio.income.currency, base_model.horizon <= 1)
     
     frequency = portfolio.income.frequency
-    # tenor = schemas.tenor_map[frequency]
+    tenor = schemas.tenor_map[frequency.value]
     if frequency == schemas.Frequency.MONTHLY:
       base_query = base_query.where(or_(model.Deposit.maxTenor == 30, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.MONTHLY)))
 
