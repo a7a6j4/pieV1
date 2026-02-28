@@ -574,7 +574,6 @@ async def getNewPortfolioAllocation(
       base_query = base_query.where(or_(model.Deposit.maxTenor.in_([30, 31]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.MONTHLY)))
     elif frequency == schemas.Frequency.QUARTERLY:
       base_query = base_query.where(or_(model.Deposit.maxTenor.in_([90, 91, 92]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.QUARTERLY)))
-
     elif frequency == schemas.Frequency.SEMIANNUALLY:
       base_query = base_query.where(or_(model.Deposit.maxTenor.in_([180, 181, 182]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.SEMIANNUALLY)))
     elif frequency == schemas.Frequency.ANNUALLY:
@@ -590,7 +589,7 @@ async def getNewPortfolioAllocation(
       }
       if portfolio.income.amount is not None:
         numerator = portfolio.income.amount * 12 if frequency == schemas.Frequency.MONTHLY else portfolio.income.amount * 4 if frequency == schemas.Frequency.QUARTERLY else portfolio.income.amount * 2 if frequency == schemas.Frequency.SEMIANNUALLY else portfolio.income.amount
-        denominator = ((product.rate if product.category == schemas.ProductClass.DEPOSIT else 80 if product.currency == schemas.Currency.USD else 200) / 100)
+        denominator = ((product.rate if product.category == schemas.ProductClass.DEPOSIT else 8 if product.currency == schemas.Currency.USD else 20) / 100)
         required_amount = numerator / denominator
         recomendation["amount"] = required_amount
 
