@@ -590,7 +590,7 @@ async def getNewPortfolioAllocation(
       }
       if portfolio.income.amount is not None:
         numerator = portfolio.income.amount * 12 if frequency == schemas.Frequency.MONTHLY else portfolio.income.amount * 4 if frequency == schemas.Frequency.QUARTERLY else portfolio.income.amount * 2 if frequency == schemas.Frequency.SEMIANNUALLY else portfolio.income.amount
-        denominator = ((product.rate if product.category == schemas.ProductClass.DEPOSIT else 80 if product.currency == schemas.Currency.USD else 200) / 100) / 1 if portfolio.income.frequency == schemas.Frequency.ANNUALLY else 12 if portfolio.income.frequency == schemas.Frequency.MONTHLY else 4 if portfolio.income.frequency == schemas.Frequency.QUARTERLY else 2 if portfolio.income.frequency == schemas.Frequency.SEMIANNUALLY else 1
+        denominator = ((product.rate if product.category == schemas.ProductClass.DEPOSIT else 80 if product.currency == schemas.Currency.USD else 200) / 100) / (1 if portfolio.income.frequency == schemas.Frequency.ANNUALLY else 12 if portfolio.income.frequency == schemas.Frequency.MONTHLY else 4 if portfolio.income.frequency == schemas.Frequency.QUARTERLY else 2 if portfolio.income.frequency == schemas.Frequency.SEMIANNUALLY else 1)
         required_amount = numerator / denominator
         recomendation["amount"] = required_amount
 
