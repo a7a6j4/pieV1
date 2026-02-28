@@ -599,8 +599,6 @@ async def getNewPortfolioAllocation(
   elif portfolio.type in [schemas.PortfolioType.TARGET, schemas.PortfolioType.GROWTH, schemas.PortfolioType.INVEST]:
 
     # get highest expected return variable product
-
-      
       if portfolio.target:
 
         base_query = base_query.where(base_model.currency == portfolio.target.currency)
@@ -636,7 +634,7 @@ async def getNewPortfolioAllocation(
             products = db.execute(base_query.where(base_model.horizon > 5).limit(3)).scalars().all()
 
         # pv of target amount
-        pv = npf.pv(0.20 if portfolio.target.currency == schemas.Currency.USD else 0.08, year_duration, 0, -portfolio.target.amount)
+        pv = npf.pv(0.20 if portfolio.target.currency == schemas.Currency.USD else 0.08, days_diff / 365, 0, -portfolio.target.amount)
         for product in products:
             result.append({
               "product": product,
