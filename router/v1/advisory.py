@@ -639,7 +639,7 @@ async def getNewPortfolioAllocation(
             result.append({
               "product": product,
               "amount": pv,
-              "estAnnualReturn": 0.20 if portfolio.target.currency == schemas.Currency.USD else 0.08
+              "estAnnualReturn": 20 if portfolio.target.currency == schemas.Currency.USD else 8
             })
         return {"recomendation": result, "growth_duration": growth_duration}
 
@@ -648,7 +648,7 @@ async def getNewPortfolioAllocation(
         for product in products:
           result.append({
             "product": product,
-            "estAnnualReturn": 0.20 if portfolio.target.currency == schemas.Currency.USD else 0.08
+            "estAnnualReturn": 20 if portfolio.target.currency == schemas.Currency.USD else 8
           })
         return {"recomendation": result}
         
