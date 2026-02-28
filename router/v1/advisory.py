@@ -594,8 +594,9 @@ async def getNewPortfolioAllocation(
         recomendation["amount"] = target_income / (((product.rate if product.category == schemas.ProductClass.DEPOSIT else 80 if product.currency == schemas.Currency.USD else 200) / 100) * (tenor / 365))
       
       result.append(recomendation)
-      
-      new_result = result.sort(key=lambda x: x["estAnnualReturn"])
+
+      new_result = sorted(result, key=lambda x: x["estAnnualReturn"])
+    
       return {"recomendation": new_result}
 
   elif portfolio.type in [schemas.PortfolioType.TARGET, schemas.PortfolioType.GROWTH, schemas.PortfolioType.INVEST]:
