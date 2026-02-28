@@ -560,39 +560,52 @@ async def getNewPortfolioAllocation(
   db: db,
   portfolio: model.Portfolio = Depends(getPortfolio), 
   ):
+  # get highest return variable or deposit product
+  base_model = with_polymorphic(model.Product, [model.Variable, model.Deposit])
+  base_query = select(base_model).where(base_model.isActive == True)
+  result = []
 
-  if portfolio.type == schemas.PortfolioType.INCOME:
-
+  if portfolio.income is not None:
+    base_query = base_query.where(base_model.currency == portfolio.income.currency, base_model.horizon <= 1)
+    
     frequency = portfolio.income.frequency
     # tenor = schemas.tenor_map[frequency]
-    tenor = 90
+    if frequency == schemas.Frequency.MONTHLY:
+      tenor = 30
+      base_query = base_query.where(model.Deposit.maxTenor == 30 or model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.MONTHLY))
 
-    # mutual funds and deposits, which has the 
+    elif frequency == schemas.Frequency.QUARTERLY:
+      tenor = 90
+      base_query = base_query.where(model.Deposit.maxTenor == 90 or model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.QUARTERLY))
 
-    depositProducts = db.execute(
-      select(model.Deposit).
-      where(model.Deposit.maxTenor >= tenor, model.Deposit.minTenor <= tenor, model.Deposit.currency == 'NGN', model.Deposit.isActive == True).
-      order_by(model.Deposit.rate.desc()).
-      limit(3)).scalars().all()
-    if portfolio.income.amount is not None:
-      target_income = portfolio.income.amount
-      print(target_income)
-      requiredInvestments = list(map(lambda x: {
-        "product": x,
-        "requiredInvestment": target_income / x.rate * 100 / (tenor / 365),
-        "estAnnualReturn": x.rate if x.category == schemas.ProductClass.DEPOSIT else 0.20 if x.currency == schemas.Currency.USD else 0.08
-      }, depositProducts))
-      return requiredInvestments
+    elif frequency == schemas.Frequency.SEMIANNUALLY:
+      tenor = 180
+      base_query = base_query.where(model.Deposit.maxTenor == 180 or model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.SEMIANNUALLY))
 
-    return depositProducts
+    elif frequency == schemas.Frequency.ANNUALLY:
+      tenor = 365
+      base_query = base_query.where(model.Deposit.maxTenor == 365 or model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.ANNUALLY))
+
+    products = base_query.limit(3).scalars().all()
+
+    products_result = []
+
+    for product in products:
+      recomendation = {
+        "product": product,
+        "estAnnualReturn": product.latestValue
+      }
+      if portfolio.income.amount is not None:
+        target_income = portfolio.income.amount
+        recomendation["requiredInvestment"] = target_income / (((product.rate if product.category == schemas.ProductClass.DEPOSIT else 200 if product.currency == schemas.Currency.USD else 80) / 100) * (tenor / 365))
+      
+      products_result.append(recomendation)
+    return products_result
 
   elif portfolio.type in [schemas.PortfolioType.TARGET, schemas.PortfolioType.GROWTH, schemas.PortfolioType.INVEST]:
 
     # get highest expected return variable product
 
-      base_model = with_polymorphic(model.Product, [model.Variable, model.Deposit])
-      base_query = select(base_model).where(base_model.isActive == True)
-      result = []
       
       if portfolio.target:
 
