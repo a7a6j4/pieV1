@@ -634,12 +634,12 @@ async def getNewPortfolioAllocation(
             products = db.execute(base_query.where(base_model.horizon > 5).limit(3)).scalars().all()
 
         # pv of target amount
-        pv = npf.pv(0.20 if portfolio.target.currency == schemas.Currency.USD else 0.08, days_diff / 365, 0, -portfolio.target.amount)
+        pv = npf.pv(0.08 if portfolio.target.currency == schemas.Currency.USD else 0.2, days_diff / 365, 0, -portfolio.target.amount)
         for product in products:
             result.append({
               "product": product,
               "amount": pv,
-              "estAnnualReturn": 20 if portfolio.target.currency == schemas.Currency.USD else 8
+              "estAnnualReturn": 8 if portfolio.target.currency == schemas.Currency.USD else 20
             })
         return {"recomendation": result, "growth_duration": growth_duration}
 
@@ -648,7 +648,7 @@ async def getNewPortfolioAllocation(
         for product in products:
           result.append({
             "product": product,
-            "estAnnualReturn": 20 if portfolio.target.currency == schemas.Currency.USD else 8
+            "estAnnualReturn": 8 if portfolio.target.currency == schemas.Currency.USD else 20
           })
         return {"recomendation": result}
         
