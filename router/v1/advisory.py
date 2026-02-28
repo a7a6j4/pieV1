@@ -572,16 +572,17 @@ async def getNewPortfolioAllocation(
     tenor = schemas.tenor_map[frequency]
     if frequency == schemas.Frequency.MONTHLY:
       base_query = base_query.where(or_(model.Deposit.maxTenor.in_([30, 31]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.MONTHLY)))
-
+      required_amount = portfolio.income.amount * 12 / ((product.rate if product.category == schemas.ProductClass.DEPOSIT else 80 if product.currency == schemas.Currency.USD else 200) / 100)
     elif frequency == schemas.Frequency.QUARTERLY:
       base_query = base_query.where(or_(model.Deposit.maxTenor.in_([90, 91, 92]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.QUARTERLY)))
+      required_amount = portfolio.income.amount * 4 / ((product.rate if product.category == schemas.ProductClass.DEPOSIT else 80 if product.currency == schemas.Currency.USD else 200) / 100)
 
     elif frequency == schemas.Frequency.SEMIANNUALLY:
       base_query = base_query.where(or_(model.Deposit.maxTenor.in_([180, 181, 182]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.SEMIANNUALLY)))
-
+      required_amount = portfolio.income.amount * 2 / ((product.rate if product.category == schemas.ProductClass.DEPOSIT else 80 if product.currency == schemas.Currency.USD else 200) / 100)
     elif frequency == schemas.Frequency.ANNUALLY:
       base_query = base_query.where(or_(model.Deposit.maxTenor.in_([364, 365, 366]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.ANNUALLY)))
-
+      required_amount = portfolio.income.amount / ((product.rate if product.category == schemas.ProductClass.DEPOSIT else 80 if product.currency == schemas.Currency.USD else 200) / 100)
     products = db.execute(base_query.limit(3)).scalars().all()
 
     for product in products:
@@ -591,8 +592,8 @@ async def getNewPortfolioAllocation(
       }
       if portfolio.income.amount is not None:
         target_income = portfolio.income.amount
-        recomendation["amount"] = target_income / (((product.rate if product.category == schemas.ProductClass.DEPOSIT else 80 if product.currency == schemas.Currency.USD else 200) / 100) * (tenor / 365))
-      
+        recomendation["amount"] = required_amount
+
       result.append(recomendation)
 
       new_result = sorted(result, key=lambda x: x["estAnnualReturn"])
