@@ -587,11 +587,11 @@ async def getNewPortfolioAllocation(
     for product in products:
       recomendation = {
         "product": product,
-        "estAnnualReturn": product.rate if product.category == schemas.ProductClass.DEPOSIT else 20 if product.currency == schemas.Currency.USD else 8
+        "estAnnualReturn": product.rate if product.category == schemas.ProductClass.DEPOSIT else 8 if product.currency == schemas.Currency.USD else 20
       }
       if portfolio.income.amount is not None:
         target_income = portfolio.income.amount
-        recomendation["requiredInvestment"] = target_income / (((product.rate if product.category == schemas.ProductClass.DEPOSIT else 200 if product.currency == schemas.Currency.USD else 80) / 100) * (tenor / 365))
+        recomendation["requiredInvestment"] = target_income / (((product.rate if product.category == schemas.ProductClass.DEPOSIT else 80 if product.currency == schemas.Currency.USD else 200) / 100) * (tenor / 365))
       
       result.append(recomendation)
     return {"recomendation": result}
