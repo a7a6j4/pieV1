@@ -571,20 +571,16 @@ async def getNewPortfolioAllocation(
     frequency = portfolio.income.frequency
     # tenor = schemas.tenor_map[frequency]
     if frequency == schemas.Frequency.MONTHLY:
-      tenor = 30
-      base_query = base_query.where(model.Deposit.maxTenor == 30 or model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.MONTHLY))
+      base_query = base_query.where(or_(model.Deposit.maxTenor == 30, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.MONTHLY)))
 
     elif frequency == schemas.Frequency.QUARTERLY:
-      tenor = 90
-      base_query = base_query.where(model.Deposit.maxTenor == 90 or model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.QUARTERLY))
+      base_query = base_query.where(or_(model.Deposit.maxTenor == 90, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.QUARTERLY)))
 
     elif frequency == schemas.Frequency.SEMIANNUALLY:
-      tenor = 180
-      base_query = base_query.where(model.Deposit.maxTenor == 180 or model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.SEMIANNUALLY))
+      base_query = base_query.where(or_(model.Deposit.maxTenor == 180, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.SEMIANNUALLY)))
 
     elif frequency == schemas.Frequency.ANNUALLY:
-      tenor = 365
-      base_query = base_query.where(model.Deposit.maxTenor == 365 or model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.ANNUALLY))
+      base_query = base_query.where(or_(model.Deposit.maxTenor == 365, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.ANNUALLY)))
 
     products = db.execute(base_query.limit(3)).scalars().all()
 
