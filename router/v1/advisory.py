@@ -586,8 +586,7 @@ async def getNewPortfolioAllocation(
       tenor = 365
       base_query = base_query.where(model.Deposit.maxTenor == 365 or model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.ANNUALLY))
 
-    products = base_query.limit(3).scalars().all()
-
+    products = db.execute(base_query.limit(3)).scalars().all()
 
     for product in products:
       recomendation = {
