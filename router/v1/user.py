@@ -319,6 +319,7 @@ async def createUserKycAddress(db: db, user: Annotated[model.User, Security(getU
         city=data.city,
         state=data.state.value,
         postalCode=data.postalCode,
+        country=data.country.value,
     ))
 
     user_address = model.UserAddress(kycId=user.kyc.id, houseNumber=data.houseNumber, addressLineOne=data.addressLineOne, addressLineTwo=data.addressLineTwo, city=data.city, state=data.state.value, postalCode=data.postalCode)
