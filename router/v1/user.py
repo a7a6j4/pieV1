@@ -311,8 +311,8 @@ async def createUserKycAddress(db: db, user: Annotated[model.User, Security(getU
 
     # create demo deposit account
     
-
-    db.execute(update(model.UserAddress).where(model.UserAddress.kycId == user.kyc.id).values(
+    user_address = model.UserAddress(
+        kycId=user.kyc.id,
         houseNumber=data.houseNumber,
         addressLineOne=data.addressLineOne,
         addressLineTwo=data.addressLineTwo,
@@ -320,9 +320,7 @@ async def createUserKycAddress(db: db, user: Annotated[model.User, Security(getU
         state=data.state.value,
         postalCode=data.postalCode,
         country=data.country.value,
-    ))
-
-    user_address = model.UserAddress(kycId=user.kyc.id, houseNumber=data.houseNumber, addressLineOne=data.addressLineOne, addressLineTwo=data.addressLineTwo, city=data.city, state=data.state.value, postalCode=data.postalCode)
+    )
     db.add(user_address)
 
     try:
