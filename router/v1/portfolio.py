@@ -173,97 +173,56 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
         .having(net_units_expr > 0)
     ).mappings().all()
 
-    variable_assets_list = []
+    assets = []
 
     for asset in variable_assets:
         asset["vwac"] = asset["net_amount"] / asset["net_units"]
         asset["current_price"] = await getPrice(db=db, product=asset["product"])
         asset["performance"] = asset["current_price"] / asset["vwac"] - 1
         asset["current_value"] = asset["net_amount"] * (1 + asset["performance"])
-        variable_assets_list.append(asset)
+        assets.append(asset)
 
     deposits = db.execute(select(model.PortfolioDeposit).join_from(model.PortfolioDeposit, model.DepositTransaction, model.PortfolioDeposit.transactionId == model.DepositTransaction.id).where(model.PortfolioDeposit.closed == False, model.PortfolioDeposit.maturityDate >= datetime.now())).mappings().all()
-    deposits_list = []
+
     for deposit in deposits:
         current_value = await getNGDepositValue(deposit["PortfolioDeposit"].id, db)
         deposit["current_value"] = current_value["current_value"] / 100
         deposit["performance"] = (current_value["current_value"] - current_value["principal"]) / current_value["principal"]
         deposit["holding_period"] = (min(datetime.now(), deposit["PortfolioDeposit"].maturityDate) - deposit["PortfolioDeposit"].effectiveDate).days
         deposit["annualized_performance"] = (1 + deposit["performance"])**(365 / deposit["holding_period"]) - 1
-        deposits_list.append(deposit)
+        assets.append(deposit)
 
-    return {
-        "variable_assets": variable_assets_list,
-        "deposits": deposits_list,
-    }
+    return assets
     
 @portfolio.get("/value")
-async def getPortfolioValue(
-    db: db,
-    assets = Depends(getPortfolioAssets)
-):
+async def getPortfolioValue(db: db, assets = Depends(getPortfolioAssets)):
 
-    total_usd = 0
-    total_ngn = 0
-
-    for asset in assets.get("variable_assets_list", []):
-
-        if asset["product"].currency == schemas.Currency.USD:
-            total_usd += asset["current_value"]
-        elif asset["product"].currency == schemas.Currency.NGN:
-            total_ngn += asset["current_value"]
-
-    for deposit in assets.get("deposits", []):
+    usd_base_value = 0
+    ngn_base_value = 0
+    usd_current_value = 0
+    ngn_current_value = 0
+    portfolio_performance = 0
 
 
-    total_value = sum(map(lambda x: x["current_value"], assets_list))
-    total_invested = sum(map(lambda x: x["invested_amount"], assets_list))
-    performance = (total_value - total_invested) / total_invested if total_invested > 0 or total_value > 0 else 0
+    for asset in assets:
+        (usd_base_value if asset["product"].currency == schemas.Currency.USD else ngn_base_value ) += asset["net_amount"]
+        (usd_current_value if asset["product"].currency == schemas.Currency.USD else ngn_current_value ) += asset["current_value"]
+        asset_performance = (asset["current_value"] - asset["net_amount"]) / asset["net_amount"]
+        portfolio_performance += asset_performance * asset["net_amount"]
 
-    
-    ngn_deposits = list(filter(lambda x: x["category"] == "deposit" and x["deposit"].transaction.product.currency == schemas.Currency.NGN, assets_list))
-    usd_deposits = list(filter(lambda x: x["category"] == "deposit" and x["deposit"].transaction.product.currency == schemas.Currency.USD, assets_list))
-    ngn_variable = list(filter(lambda x: x["category"] == "variable" and x["product"].currency == schemas.Currency.NGN, assets_list))
-    usd_variable = list(filter(lambda x: x["category"] == "variable" and x["product"].currency == schemas.Currency.USD, assets_list))
+    portfolio_value_usd = usd_current_value + (ngn_current_value / 1600)
+    portfolio_value_ngn = ngn_current_value + (usd_current_value * 1600)
 
-    (ngn_deposits_value, ngn_deposits_invested) = (sum(map(lambda x: x["current_value"], ngn_deposits)), sum(map(lambda x: x["invested_amount"], ngn_deposits)))
-    (usd_deposits_value, usd_deposits_invested) = (sum(map(lambda x: x["current_value"], usd_deposits)), sum(map(lambda x: x["invested_amount"], usd_deposits)))
-    (ngn_variable_value, ngn_variable_invested) = (sum(map(lambda x: x["current_value"], ngn_variable)), sum(map(lambda x: x["invested_amount"], ngn_variable)))
-    (usd_variable_value, usd_variable_invested) = (sum(map(lambda x: x["current_value"], usd_variable)), sum(map(lambda x: x["invested_amount"], usd_variable)))
-
-    try:
-        usd_performance = ((usd_variable_value + usd_deposits_value) - (usd_variable_invested + usd_deposits_invested)) / (usd_variable_invested + usd_deposits_invested)
-    except:
-        usd_performance = 0
-    try:
-        ngn_performance = ((ngn_variable_value + ngn_deposits_value) - (ngn_variable_invested + ngn_deposits_invested)) / (ngn_variable_invested + ngn_deposits_invested)
-    except:
-        ngn_performance = 0
-
-    total_value_ngn = ngn_variable_value + ngn_deposits_value
-    total_value_usd = usd_variable_value + usd_deposits_value
 
     response_data = {
-        "totalValueNgn": total_value_ngn,
-        "totalValueUsd": total_value_usd,
-        "totalPerformanceNgn": ngn_performance,
-        "totalPerformanceUsd": usd_performance,
-        "assets": assets_list,
+        "totalValueUsd": portfolio_value_usd,
+        "totalValueNgn": portfolio_value_ngn,
+        "totalPerformance": portfolio_performance,
+        "totalUsdAssetValue": usd_current_value,
+        "totalNgnAssetValue": ngn_current_value,
+        "totalUsdInvested": usd_base_value,
+        "totalNgnInvested": ngn_base_value,
     }
-
-    if assets.get("target") is not None:
-
-        target_value = assets.get("target", None).get("amount", 0)
-        target_currency = assets.get("target", None).get("currency", None)
-
-        if target_currency == schemas.Currency.NGN:
-            target_performance = target_value / total_value_ngn if total_value_ngn > 0 else 0
-        elif target_currency == schemas.Currency.USD:
-            target_performance = target_value / total_value_usd if total_value_usd > 0 else 0
-        else:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid target currency")
-
-        response_data["targetPerformance"] = target_performance
 
     return response_data
 
