@@ -169,7 +169,7 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
         )
         .join_from(parent_class, model.VariableLedger, model.VariableLedger.variableId == model.Variable.id)
         .where(model.VariableLedger.portfolioId == portfolio.id)
-        .group_by(model.Product.id)
+        .group_by(model.Product.id, model.Variable.id, model.Deposit.id)
         .having(net_units_expr > 0)
     ).mappings().all()
 
