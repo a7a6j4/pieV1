@@ -163,7 +163,7 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
 
     variable_assets = db.execute(
         select(
-            parent_class.as_alias("product"),
+            parent_class,
             net_units_expr.label("net_units"),
             net_amount_expr.label("net_amount"),
         )
