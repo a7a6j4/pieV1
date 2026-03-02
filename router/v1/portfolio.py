@@ -109,6 +109,40 @@ async def getPortfolioTransactions(
         transactions = [transaction for transaction in transactions if transaction.status == status]
     return transactions
 
+@portfolio.get("/deposit-value")
+async def getNGDepositValue(depositId: int, db: db):
+    deposit = db.get(model.PortfolioDeposit, depositId)
+    if not deposit:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deposit not found")
+    
+    deposit_value = db.execute(select(
+        func.sum(case(
+            ((model.DepositLedger.account == schemas.PortfolioAccount.ASSET and model.DepositLedger.side == schemas.UserLedgerSide.IN),
+            model.DepositLedger.amount),
+            ((model.DepositLedger.account == schemas.PortfolioAccount.ASSET and model.DepositLedger.side == schemas.UserLedgerSide.OUT),
+            -model.DepositLedger.amount),
+        )).label("principal"),
+        func.sum(case(
+            ((model.DepositLedger.account == schemas.PortfolioAccount.INTEREST and model.DepositLedger.side == schemas.UserLedgerSide.IN),
+            model.DepositLedger.amount),
+            ((model.DepositLedger.account == schemas.PortfolioAccount.INTEREST and model.DepositLedger.side == schemas.UserLedgerSide.OUT),
+            -model.DepositLedger.amount),
+        )).label("accrued_interest"),
+        func.sum(case(
+            ((model.DepositLedger.account == schemas.PortfolioAccount.TAX and model.DepositLedger.side == schemas.UserLedgerSide.IN),
+            -model.DepositLedger.amount),
+            ((model.DepositLedger.account == schemas.PortfolioAccount.TAX and model.DepositLedger.side == schemas.UserLedgerSide.OUT),
+            model.DepositLedger.amount)
+        )).label("withholding_tax"),
+    ).where(model.DepositLedger.portfolioDepositId == deposit.id)).mappings().all()
+
+    principal = (deposit_value[0].principal if deposit_value[0].principal else 0) / 100
+    accrued_interest = (deposit_value[0].accrued_interest if deposit_value[0].accrued_interest else 0) / 100
+    withholding_tax = (deposit_value[0].withholding_tax if deposit_value[0].withholding_tax else 0) / 100
+    current_value = principal + accrued_interest - withholding_tax
+
+    return {"deposit": deposit, "current_value": current_value, "principal": principal, "accrued_interest": accrued_interest, "withholding_tax": withholding_tax}
+
 @portfolio.get("/assets")
 async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPortfolio)):
 
@@ -149,101 +183,38 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
         variable_assets_list.append(asset)
 
     deposits = db.execute(select(model.PortfolioDeposit).join_from(model.PortfolioDeposit, model.DepositTransaction, model.PortfolioDeposit.transactionId == model.DepositTransaction.id).where(model.PortfolioDeposit.closed == False, model.PortfolioDeposit.maturityDate >= datetime.now())).mappings().all()
+    deposits_list = []
+    for deposit in deposits:
+        current_value = await getNGDepositValue(deposit["PortfolioDeposit"].id, db)
+        deposit["current_value"] = current_value["current_value"] / 100
+        deposit["performance"] = (current_value["current_value"] - current_value["principal"]) / current_value["principal"]
+        deposit["holding_period"] = (min(datetime.now(), deposit["PortfolioDeposit"].maturityDate) - deposit["PortfolioDeposit"].effectiveDate).days
+        deposit["annualized_performance"] = (1 + deposit["performance"])**(365 / deposit["holding_period"]) - 1
+        deposits_list.append(deposit)
 
     return {
         "variable_assets": variable_assets_list,
-        "deposits": deposits,
+        "deposits": deposits_list,
     }
     
-@portfolio.get("/deposit-value")
-async def getNGDepositValue(depositId: int, db: db):
-    deposit = db.get(model.PortfolioDeposit, depositId)
-    if not deposit:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deposit not found")
-    
-    deposit_value = db.execute(select(
-        func.sum(case(
-            ((model.DepositLedger.account == schemas.PortfolioAccount.ASSET and model.DepositLedger.side == schemas.UserLedgerSide.IN),
-            model.DepositLedger.amount),
-            ((model.DepositLedger.account == schemas.PortfolioAccount.ASSET and model.DepositLedger.side == schemas.UserLedgerSide.OUT),
-            -model.DepositLedger.amount),
-        )).label("principal"),
-        func.sum(case(
-            ((model.DepositLedger.account == schemas.PortfolioAccount.INTEREST and model.DepositLedger.side == schemas.UserLedgerSide.IN),
-            model.DepositLedger.amount),
-            ((model.DepositLedger.account == schemas.PortfolioAccount.INTEREST and model.DepositLedger.side == schemas.UserLedgerSide.OUT),
-            -model.DepositLedger.amount),
-        )).label("accrued_interest"),
-        func.sum(case(
-            ((model.DepositLedger.account == schemas.PortfolioAccount.TAX and model.DepositLedger.side == schemas.UserLedgerSide.IN),
-            -model.DepositLedger.amount),
-            ((model.DepositLedger.account == schemas.PortfolioAccount.TAX and model.DepositLedger.side == schemas.UserLedgerSide.OUT),
-            model.DepositLedger.amount)
-        )).label("withholding_tax"),
-    ).where(model.DepositLedger.portfolioDepositId == deposit.id)).mappings().all()
-
-    principal = (deposit_value[0].principal if deposit_value[0].principal else 0) / 100
-    accrued_interest = (deposit_value[0].accrued_interest if deposit_value[0].accrued_interest else 0) / 100
-    withholding_tax = (deposit_value[0].withholding_tax if deposit_value[0].withholding_tax else 0) / 100
-    current_value = principal + accrued_interest - withholding_tax
-
-    return {"deposit": deposit, "current_value": current_value, "principal": principal, "accrued_interest": accrued_interest, "withholding_tax": withholding_tax}
-
 @portfolio.get("/value")
 async def getPortfolioValue(
     db: db,
     assets = Depends(getPortfolioAssets)
 ):
 
-    assets_list = []
+    total_usd = 0
+    total_ngn = 0
 
-    for asset in assets.get("variable_assets", []):
-        if asset["Variable"].productClass == schemas.ProductClass.EQUITY and asset["Variable"].productGroup.market == schemas.Country.NG:
-            value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == asset["Variable"].id).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
-            price = value.price / 100
-            current_value = asset["net_units"] * price
-            invested_amount = asset["net_amount"]
-            performance = (current_value - invested_amount) / invested_amount
-            assets_list.append({
-                "product": asset["Variable"],
-                "invested_amount": invested_amount,
-                "vwac": asset["vwac"],
-                "current_price": price,
-                "current_value": current_value,
-                "performance": performance,
-                "category": "variable",
-            })
-        elif asset["Variable"].productClass in [schemas.ProductClass.EQUITY, schemas.ProductClass.ETF] and asset["Variable"].productGroup.market == schemas.Country.US:
-            price = await getPrice(db=db, variable_id=asset["Variable"].id)
-            performance = (price / asset["vwac"]) - 1
-            assets_list.append({
-                "product": asset["Variable"],
-                "invested_amount": asset["net_amount"],
-                "vwac": asset["vwac"],
-                "current_price": price,
-                "current_value": asset["net_units"] * price,
-                "performance": performance,
-                "category": "variable",
-            })
-        elif asset["Variable"].productClass == schemas.ProductClass.MUTUAL_FUND:
-            pass
+    for asset in assets.get("variable_assets_list", []):
+
+        if asset["product"].currency == schemas.Currency.USD:
+            total_usd += asset["current_value"]
+        elif asset["product"].currency == schemas.Currency.NGN:
+            total_ngn += asset["current_value"]
 
     for deposit in assets.get("deposits", []):
-        current_value = await getNGDepositValue(deposit["PortfolioDeposit"].id, db)
-        invested_amount = deposit["amount"] / 100
-        performance = (current_value["current_value"] - invested_amount) / invested_amount
-        holding_period = min(datetime.now(), deposit["PortfolioDeposit"].maturityDate) - deposit["PortfolioDeposit"].effectiveDate
-        annualized_performance = (1 + performance)**(365 / holding_period.days) - 1
-        assets_list.append({
-            "deposit": deposit["PortfolioDeposit"],
-            "rate": deposit["rate"],
-            "tenor": deposit["tenor"],
-            "invested_amount": invested_amount,
-            "current_value": current_value["current_value"],
-            "performance": annualized_performance,
-            "holding_period": holding_period.days,
-            "category": "deposit",
-        })
+
 
     total_value = sum(map(lambda x: x["current_value"], assets_list))
     total_invested = sum(map(lambda x: x["invested_amount"], assets_list))
