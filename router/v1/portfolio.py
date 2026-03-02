@@ -1,12 +1,13 @@
 from cgi import print_exception
 # from click.utils import P
+from celery import current_app
 from fastapi import FastAPI, APIRouter, Security, Depends, HTTPException, status, Query, Path, Body
 from fastapi.security import SecurityScopes
 import requests
 from database import db
 from sqlalchemy import select, update, delete, func, and_, or_, not_, desc, asc, extract, case
 from sqlalchemy.sql import over
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, with_polymorphic
 from pydantic import BaseModel
 from typing import Any, Optional, List, Union, Annotated
 from datetime import datetime, timedelta
@@ -111,31 +112,47 @@ async def getPortfolioTransactions(
 @portfolio.get("/assets")
 async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPortfolio)):
 
-    variable_assets = db.execute(
-      select(model.Variable,
-          func.sum(case(
+    parent_class = with_polymorphic(model.Product, [model.Variable, model.Deposit])
+
+    net_units_expr = func.sum(
+        case(
             (model.VariableLedger.side == schemas.UserLedgerSide.IN, model.VariableLedger.units),
             (model.VariableLedger.side == schemas.UserLedgerSide.OUT, -model.VariableLedger.units),
-          )).label("net_units"),
-          func.sum(case(
+        )
+    )
+    net_amount_expr = func.sum(
+        case(
             (model.VariableLedger.side == schemas.UserLedgerSide.IN, model.VariableLedger.amount),
             (model.VariableLedger.side == schemas.UserLedgerSide.OUT, -model.VariableLedger.amount),
-          )).label("net_amount"),
-      ).join_from(model.VariableLedger, model.Variable, model.VariableLedger.variableId == model.Variable.id).where(model.VariableLedger.portfolioId == portfolio.id).distinct(model.Variable.id).group_by(model.Variable.id, model.Product.id)
-  ).mappings().all()
+        )
+    )
 
-    filtered_variable_assets = filter(lambda x: x.net_units > 0, variable_assets)
-    map_variable_assets = list(map(lambda x: {"Variable": x.Variable, "net_units": x.net_units, "net_amount": x.net_amount / 100, "vwac": (x.net_amount / 100) / x.net_units}, filtered_variable_assets))    
-    
-    transactions = select(model.DepositTransaction).where(model.DepositTransaction.portfolioId == portfolio.id).subquery()
-    deposits = db.execute(select(model.PortfolioDeposit, transactions).join_from(transactions, model.PortfolioDeposit, model.PortfolioDeposit.transactionId == transactions.c.id).where(model.PortfolioDeposit.closed == False, model.PortfolioDeposit.maturityDate >= datetime.now())).mappings().all()
+    variable_assets = db.execute(
+        select(
+            parent_class.as_alias("product"),
+            net_units_expr.label("net_units"),
+            net_amount_expr.label("net_amount"),
+        )
+        .join_from(parent_class, model.VariableLedger, model.VariableLedger.variableId == model.Variable.id)
+        .where(model.VariableLedger.portfolioId == portfolio.id)
+        .group_by(model.Variable.id, model.Product.id)
+        .having(net_units_expr > 0)
+    ).mappings().all()
 
-    target = {"amount": portfolio.target.amount if portfolio.target else None, "currency": portfolio.target.currency if portfolio.target else None} if portfolio.target else None
+    variable_assets_list = []
+
+    for asset in variable_assets:
+        asset["vwac"] = asset["net_amount"] / asset["net_units"]
+        asset["current_price"] = await getPrice(db=db, product=asset["product"])
+        asset["current_value"] = asset["net_units"] * asset["current_price"]
+        asset["performance"] = asset["current_price"] / asset["vwac"] - 1
+        variable_assets_list.append(asset)
+
+    deposits = db.execute(select(model.PortfolioDeposit).join_from(model.PortfolioDeposit, model.DepositTransaction, model.PortfolioDeposit.transactionId == model.DepositTransaction.id).where(model.PortfolioDeposit.closed == False, model.PortfolioDeposit.maturityDate >= datetime.now())).mappings().all()
 
     return {
-        "variable_assets": map_variable_assets,
+        "variable_assets": variable_assets_list,
         "deposits": deposits,
-        "target": target,
     }
     
 @portfolio.get("/deposit-value")

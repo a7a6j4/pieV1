@@ -85,33 +85,28 @@ async def getProduct(
   incomeFrequency: Optional[schemas.Frequency] = Query(default=None),
   ):
 
+  parent_class = with_polymorphic(model.Product, [model.Variable, model.Deposit])
   if productId:
-    product = db.query(model.Product).filter(model.Product.id == productId).first()
+    product = db.get(parent_class, productId)
     if not product:
       raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    
-    if product.category == "variable":
-      product = db.query(model.Variable).filter(model.Variable.id == productId).first()
-    elif product.category == "deposit":
-      product = db.query(model.Deposit).filter(model.Deposit.id == productId).first()
-    else:
-      raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid product type")
-
-    # get product image url
-    # product_copy = product.copy()
 
     if product.img:
       try:
         img_url = await get_file(bucket_name="product", file_name=product.img)
         product.img = img_url
       except Exception as e:
-        print(e)
+        pass
+    if product.issuer.img:
+      try:
+        img_url = await get_file(bucket_name="issuer", file_name=product.issuer.img)
+        product.img = img_url
+      except Exception as e:
         pass
 
     return product
   else:
-    products = with_polymorphic(model.Product, [model.Variable, model.Deposit])
-    base_query = select(products).where(products.isActive == True)
+    base_query = select(parent_class).where(parent_class.isActive == True)
 
     if income:
       base_query = base_query.where(or_(model.Variable.attributes.has(model.VariableAttributes.distribution != schemas.Frequency.NONE), model.Deposit.fixed == True))
@@ -127,27 +122,27 @@ async def getProduct(
       if incomeFrequency == schemas.Frequency.SEMIANNUALLY:
         base_query = base_query = base_query.where(or_(model.Variable.attributes.has(model.VariableAttributes.distribution == incomeFrequency), model.Deposit.maxTenor.in_([180, 181, 182])))
     if productClass:
-      base_query = base_query.where(products.productClass == productClass)
+      base_query = base_query.where(parent_class.productClass == productClass)
     if type:
-      base_query = base_query.where(products.category == type)
+      base_query = base_query.where(parent_class.category == type)
     if assetClass:
-      base_query = base_query.where(products.assetClass == assetClass)
+      base_query = base_query.where(parent_class.assetClass == assetClass)
     if currency:
-      base_query = base_query.where(products.currency == currency)
+      base_query = base_query.where(parent_class.currency == currency)
     if isActive:
-      base_query = base_query.where(products.isActive == isActive)
+      base_query = base_query.where(parent_class.isActive == isActive)
     if productGroupId:
-      base_query = base_query.where(products.productGroupId == productGroupId)
+      base_query = base_query.where(parent_class.productGroupId == productGroupId)
     if benchmarkId:
-      base_query = base_query.where(products.benchmarkId == benchmarkId)
+      base_query = base_query.where(parent_class.benchmarkId == benchmarkId)
     if riskLevel:
-      base_query = base_query.where(products.riskLevel == riskLevel)
+      base_query = base_query.where(parent_class.riskLevel == riskLevel)
     if horizon:
-      base_query = base_query.where(products.horizon == horizon)
+      base_query = base_query.where(parent_class.horizon == horizon)
     if maxHorizon:
-      base_query = base_query.where(products.horizon <= maxHorizon)
+      base_query = base_query.where(parent_class.horizon <= maxHorizon)
     if minHorizon:
-      base_query = base_query.where(products.horizon >= minHorizon)
+      base_query = base_query.where(parent_class.horizon >= minHorizon)
     if minTenor:
       base_query = base_query.where(model.Deposit.minTenor >= minTenor)
     if maxTenor:
@@ -534,8 +529,8 @@ async def updateProduct(db: db):
 #       product.values.append(new_value)
 #       db.add(product)
 
-  db.commit()
-  return {"message": "Product values added successfully"}
+#   db.commit()
+#   return {"message": "Product values added successfully"}
 
 class BulkValueIn(BaseModel):
   date: datetime
@@ -623,28 +618,23 @@ async def getUSPrice(ticker: str):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to get price for {ticker}: {response.text}")
 
 @product.get('/mutual-fund/price')
-async def getNGMutualFundPrice():
-    # mutual_fund_value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == variable.variableId).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
-    # return mutual_fund_value.price
-    return 100.00
+async def getNGMutualFundPrice(db: db, variable: model.Product = Depends(getProduct)):
+    mutual_fund_value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == variable.variableId).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
+    if mutual_fund_value is None:
+      return 100.00
+    return mutual_fund_value.price / 100
 
 @product.get('/price')
-async def getPrice(db: db, variable_id: int):
+async def getPrice(db: db, product: model.Product = Depends(getProduct)):
 
-  variable = db.get(model.Variable, variable_id)
-  if variable is None:
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Variable {variable_id} not found")
-  if variable.productClass in [schemas.ProductClass.EQUITY, schemas.ProductClass.ETF] and variable.productGroup.market == schemas.Country.NG:
-    return 100.00
-  elif variable.productClass in [schemas.ProductClass.EQUITY, schemas.ProductClass.ETF] and variable.productGroup.market == schemas.Country.US:
-    return 5.00
-    # return await tiingo.tiingo.getStockPrice(variable.symbol)
-    # return await utils.vantage.getUSPrice(variable.symbol)
-  elif variable.productClass == schemas.ProductClass.MUTUAL_FUND and variable.productGroup.market == schemas.Country.NG:
-    return await getNGMutualFundPrice()
-  else:
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Variable {variable_id} is not an equity product")
-
+  if product.productClass == schemas.ProductClass.MUTUAL_FUND and product.productGroup.market == schemas.Country.NG and product.assetClass != schemas.AssetClassType.MONEY_MARKET:
+    return await getNGMutualFundPrice(db, product)
+  if product.productClass in [schemas.ProductClass.EQUITY, schemas.ProductClass.ETF] and product.productGroup.market == schemas.Country.US:
+    return await getUSPrice(product.symbol)
+  if product.productClass in [schemas.ProductClass.EQUITY, schemas.ProductClass.ETF] and product.productGroup.market == schemas.Country.NG:
+    return await getNGXPrice(product.symbol)
+  if product.productClass == schemas.ProductClass.MUTUAL_FUND and product.productGroup.market == schemas.Country.NG and product.assetClass == schemas.AssetClassType.MONEY_MARKET:
+    return 1.00
 
 @product.post('/benchmark')
 async def createBenchmark(db: db, benchmark: schemas.BenchmarkCreate):
