@@ -144,8 +144,8 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
     for asset in variable_assets:
         asset["vwac"] = asset["net_amount"] / asset["net_units"]
         asset["current_price"] = await getPrice(db=db, product=asset["product"])
-        asset["current_value"] = asset["net_units"] * asset["current_price"]
         asset["performance"] = asset["current_price"] / asset["vwac"] - 1
+        asset["current_value"] = asset["net_amount"] * (1 + asset["performance"])
         variable_assets_list.append(asset)
 
     deposits = db.execute(select(model.PortfolioDeposit).join_from(model.PortfolioDeposit, model.DepositTransaction, model.PortfolioDeposit.transactionId == model.DepositTransaction.id).where(model.PortfolioDeposit.closed == False, model.PortfolioDeposit.maturityDate >= datetime.now())).mappings().all()
