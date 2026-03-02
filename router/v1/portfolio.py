@@ -205,26 +205,23 @@ async def getPortfolioValue(db: db, assets = Depends(getPortfolioAssets)):
 
 
     for asset in assets:
-        (usd_base_value if asset["product"].currency == schemas.Currency.USD else ngn_base_value ) += asset["net_amount"]
-        (usd_current_value if asset["product"].currency == schemas.Currency.USD else ngn_current_value ) += asset["current_value"]
+        if asset["product"].currency == schemas.Currency.USD:
+            usd_base_value += asset["net_amount"]
+            usd_current_value += asset["current_value"]
+        else:
+            ngn_base_value += asset["net_amount"]
+            ngn_current_value += asset["current_value"]
         asset_performance = (asset["current_value"] - asset["net_amount"]) / asset["net_amount"]
         portfolio_performance += asset_performance * asset["net_amount"]
-
-    portfolio_value_usd = usd_current_value + (ngn_current_value / 1600)
-    portfolio_value_ngn = ngn_current_value + (usd_current_value * 1600)
-
-
-    response_data = {
-        "totalValueUsd": portfolio_value_usd,
-        "totalValueNgn": portfolio_value_ngn,
+    return {
+        "totalValueUsd": usd_current_value + (ngn_current_value / 1600),
+        "totalValueNgn": ngn_current_value + (usd_current_value * 1600),
         "totalPerformance": portfolio_performance,
         "totalUsdAssetValue": usd_current_value,
         "totalNgnAssetValue": ngn_current_value,
         "totalUsdInvested": usd_base_value,
         "totalNgnInvested": ngn_base_value,
     }
-
-    return response_data
 
 async def getPortfolioDeposits(
     db: db, 
