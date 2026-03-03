@@ -139,7 +139,7 @@ async def getNGDepositValue(depositId: int, db: db):
     principal = (deposit_value[0].principal if deposit_value[0].principal else 0) / 100
     accrued_interest = (deposit_value[0].accrued_interest if deposit_value[0].accrued_interest else 0) / 100
     withholding_tax = (deposit_value[0].withholding_tax if deposit_value[0].withholding_tax else 0) / 100
-    current_value = principal + accrued_interest - withholding_tax
+    current_value = float(principal) + float(accrued_interest) - float(withholding_tax)
 
     return {"deposit": deposit, "current_value": current_value, "principal": principal, "accrued_interest": accrued_interest, "withholding_tax": withholding_tax}
 
@@ -191,12 +191,14 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
 
     for deposit in deposits:
         current_value = await getNGDepositValue(deposit["PortfolioDeposit"].id, db)
+        net_amount = float(current_value["principal"])
+        performance = (current_value["current_value"] - net_amount) / net_amount if net_amount > 0 else 0
+        # annualized_performance = (1 + performance)**(365 / deposit["PortfolioDeposit"].maturityDate - deposit["PortfolioDeposit"].effectiveDate).days - 1
         asset_data = {
-            "product": deposit["PortfolioDeposit"].product,
+            "product": deposit["PortfolioDeposit"].transaction.product,
             "currentValue": current_value["current_value"] / 100,
-            "netAmount": current_value["principal"] / 100,
-            "performance": (current_value["current_value"] - current_value["principal"]) / current_value["principal"] if current_value["principal"] > 0 else 0,
-            "annualizedPerformance": (1 + asset_data["performance"])**(365 / deposit["PortfolioDeposit"].maturityDate - deposit["PortfolioDeposit"].effectiveDate).days - 1,
+            "netAmount": net_amount / 100,
+            "performance": performance,
             "holdingPeriod": (min(datetime.now(), deposit["PortfolioDeposit"].maturityDate) - deposit["PortfolioDeposit"].effectiveDate).days,
         }
         assets.append(asset_data)
