@@ -182,7 +182,7 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
             "netAmount": asset["net_amount"] / 100,
         }
         asset_data["vwac"] = asset["net_amount"] / asset["net_units"]
-        asset_data["currentPrice"] = await getPrice(db=db, product=asset["product"])
+        asset_data["currentPrice"] = await getPrice(db=db, product=asset)
         asset_data["performance"] = asset_data["currentPrice"] / asset_data["vwac"] - 1
         asset_data["currentValue"] = asset_data["netAmount"] * (1 + asset_data["performance"])
         assets.append(asset_data)
