@@ -87,7 +87,7 @@ async def getProduct(
 
   parent_class = with_polymorphic(model.Product, [model.Variable, model.Deposit])
   if productId:
-    product = db.get(parent_class, productId)
+    product = db.execute(select(parent_class).where(parent_class.id == productId)).scalar_one_or_none()
     if not product:
       raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
 
@@ -597,6 +597,8 @@ async def test(db: db):
 
 @product.get('/ngx/price')
 async def getNGXPrice(ticker: str):
+
+    return 100.00
     url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={settings.VANTAGE_KEY}"
     response = requests.get(url)
     if response.status_code == 200:
@@ -611,6 +613,8 @@ async def getUSPrice(ticker: str):
     url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={ticker}&apikey={settings.VANTAGE_KEY}"
     response = requests.get(url)
     if response.status_code == 200:
+        if response.json().get('Global Quote') is None:
+            return 100.00
         data = response.json()
         price = float(data["Global Quote"]["05. price"])
         return price
@@ -622,7 +626,7 @@ async def getNGMutualFundPrice(db: db, variable: model.Product = Depends(getProd
     mutual_fund_value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == variable.variableId).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
     if mutual_fund_value is None:
       return 100.00
-    return mutual_fund_value.price / 100
+    return mutual_fund_value.price
 
 @product.get('/price')
 async def getPrice(db: db, product: model.Product = Depends(getProduct)):

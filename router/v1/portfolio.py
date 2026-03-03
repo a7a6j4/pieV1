@@ -1,4 +1,5 @@
 from cgi import print_exception
+from math import prod
 # from click.utils import P
 from celery import current_app
 from fastapi import FastAPI, APIRouter, Security, Depends, HTTPException, status, Query, Path, Body
@@ -7,7 +8,7 @@ import requests
 from database import db
 from sqlalchemy import select, update, delete, func, and_, or_, not_, desc, asc, extract, case
 from sqlalchemy.sql import over
-from sqlalchemy.orm import Session, selectinload, with_polymorphic
+from sqlalchemy.orm import Session, aliased, joinedload, selectinload, with_polymorphic
 from pydantic import BaseModel
 from typing import Any, Optional, List, Union, Annotated
 from datetime import datetime, timedelta
@@ -20,7 +21,7 @@ from decimal import Decimal
 import enum
 from ..v1 import auth
 from config import settings
-import utils
+import utils, copy
 
 portfolio = APIRouter(
     prefix="/portfolio",
@@ -102,7 +103,7 @@ async def createPortfolio(
 async def getPortfolioTransactions(
     db: db,
     portfolio: Annotated[model.Portfolio, Depends(getPortfolio)],
-    status: Annotated[Optional[schemas.TransactionStatus], Query()] = None):
+    status: Annotated[Optional[schemas.TransactionStatus], Query()] = schemas.TransactionStatus.COMPLETED):
 
     transactions = portfolio.transactions
     if status:
@@ -136,9 +137,9 @@ async def getNGDepositValue(depositId: int, db: db):
         )).label("withholding_tax"),
     ).where(model.DepositLedger.portfolioDepositId == deposit.id)).mappings().all()
 
-    principal = (deposit_value[0].principal if deposit_value[0].principal else 0) / 100
-    accrued_interest = (deposit_value[0].accrued_interest if deposit_value[0].accrued_interest else 0) / 100
-    withholding_tax = (deposit_value[0].withholding_tax if deposit_value[0].withholding_tax else 0) / 100
+    principal = (deposit_value[0].principal if deposit_value[0].principal else 0)
+    accrued_interest = (deposit_value[0].accrued_interest if deposit_value[0].accrued_interest else 0)
+    withholding_tax = (deposit_value[0].withholding_tax if deposit_value[0].withholding_tax else 0)
     current_value = float(principal) + float(accrued_interest) - float(withholding_tax)
 
     return {"deposit": deposit, "current_value": current_value, "principal": principal, "accrued_interest": accrued_interest, "withholding_tax": withholding_tax}
@@ -146,68 +147,69 @@ async def getNGDepositValue(depositId: int, db: db):
 @portfolio.get("/assets")
 async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPortfolio)):
 
-    parent_class = with_polymorphic(model.Product, [model.Variable, model.Deposit])
+    
+    transactions = select(model.PortfolioTransaction.id).where(model.PortfolioTransaction.portfolioId == portfolio.id, model.PortfolioTransaction.status == schemas.TransactionStatus.COMPLETED)
+    ledgers = select(model.VariableLedger).where(model.VariableLedger.transactionId.in_(transactions)).subquery()
+
+    # return db.execute(ledgers).scalars().all()
 
     net_units_expr = func.sum(
         case(
-            (model.VariableLedger.side == schemas.UserLedgerSide.IN, model.VariableLedger.units),
-            (model.VariableLedger.side == schemas.UserLedgerSide.OUT, -model.VariableLedger.units),
+            (ledgers.c.side == schemas.UserLedgerSide.IN, (ledgers.c.amount/ledgers.c.price)),
+            (ledgers.c.side == schemas.UserLedgerSide.OUT, (-ledgers.c.amount/ledgers.c.price)),
         )
     )
     net_amount_expr = func.sum(
         case(
-            (model.VariableLedger.side == schemas.UserLedgerSide.IN, model.VariableLedger.amount),
-            (model.VariableLedger.side == schemas.UserLedgerSide.OUT, -model.VariableLedger.amount),
+            (ledgers.c.side == schemas.UserLedgerSide.IN, ledgers.c.amount),
+            (ledgers.c.side == schemas.UserLedgerSide.OUT, -ledgers.c.amount),
         )
     )
 
+    product = select(model.Product).options(joinedload(model.Variable.values)).subquery()
+
     variable_assets = db.execute(
         select(
-            parent_class,
-            net_units_expr.label("net_units"),
-            net_amount_expr.label("net_amount"),
+            product,
+            net_units_expr.label("netUnits"),
+            net_amount_expr.label("netAmount"),
         )
-        .join_from(parent_class, model.VariableLedger, model.VariableLedger.variableId == parent_class.id)
-        .where(model.VariableLedger.portfolioId == portfolio.id)
-        .group_by(model.Product.id, model.Variable.id, model.Deposit.id)
-        .having(net_units_expr > 0)
+        .select_from(product).join(ledgers, ledgers.c.variableId == product.c.id)
+        .group_by(product.c.id, product.c.issuerId, product.c.title, product.c.description, product.c.currency, product.c.assetClass, product.c.productClass, product.c.category, product.c.benchmarkId, product.c.isActive, product.c.created, product.c.lastModified, product.c.productGroupId, product.c.riskLevel, product.c.horizon, product.c.img, ledgers.c.price)
+        .having(net_amount_expr > 0)
     ).mappings().all()
 
     assets = []
 
-    print(variable_assets)
-
     for asset in variable_assets:
-        print(asset.keys())
-        asset_data = {
-            "product": asset,
-            "netUnits": asset["net_units"],
-            "netAmount": asset["net_amount"] / 100,
-        }
-        asset_data["vwac"] = asset["net_amount"] / asset["net_units"]
-        asset_data["currentPrice"] = await getPrice(db=db, product=await getProduct(db=db, productId=asset.id))
-        asset_data["performance"] = asset_data["currentPrice"] / asset_data["vwac"] - 1
-        asset_data["currentValue"] = asset_data["netAmount"] * (1 + asset_data["performance"])
+        asset_data = dict(asset).copy()
+        net_amount = float(asset["netAmount"]) / 100
+
+        asset_data["vwac"] = net_amount / float(asset["netUnits"])
+        asset_data["currentPrice"] = await getPrice(db=db, product=await getProduct(db=db, productId=asset["id"]))
+        asset_data["performance"] = asset_data["currentPrice"] / (asset_data["vwac"]) - 1
+        asset_data["currentValue"] = net_amount * (1 + asset_data["performance"])
+        asset_data["netAmount"] = net_amount
         assets.append(asset_data)
 
-    deposits = db.execute(select(model.PortfolioDeposit).join_from(model.PortfolioDeposit, model.DepositTransaction, model.PortfolioDeposit.transactionId == model.DepositTransaction.id).where(model.PortfolioDeposit.closed == False, model.PortfolioDeposit.maturityDate >= datetime.now())).mappings().all()
 
-    for deposit in deposits:
-        current_value = await getNGDepositValue(deposit["PortfolioDeposit"].id, db)
-        net_amount = float(current_value["principal"])
-        performance = (current_value["current_value"] - net_amount) / net_amount if net_amount > 0 else 0
-        # annualized_performance = (1 + performance)**(365 / deposit["PortfolioDeposit"].maturityDate - deposit["PortfolioDeposit"].effectiveDate).days - 1
-        asset_data = {
-            "product": deposit["PortfolioDeposit"].transaction.product,
-            "currentValue": current_value["current_value"] / 100,
-            "netAmount": net_amount / 100,
-            "performance": performance,
-            "holdingPeriod": (min(datetime.now(), deposit["PortfolioDeposit"].maturityDate) - deposit["PortfolioDeposit"].effectiveDate).days,
-        }
-        assets.append(asset_data)
+    deposits = select(model.PortfolioDeposit, model.DepositTransaction).select_from(model.PortfolioDeposit).join(model.DepositTransaction, model.PortfolioDeposit.transactionId == model.DepositTransaction.id).where(model.DepositTransaction.portfolioId == portfolio.id, model.DepositTransaction.status == schemas.TransactionStatus.COMPLETED, model.PortfolioDeposit.closed == False, model.PortfolioDeposit.matured == False, model.PortfolioDeposit.maturityDate >= datetime.now()).subquery()
+    deposit_products = db.execute(select(model.Product.id, model.Product.currency, model.Product.title, model.Product.category, deposits.c.id.label("depositId"), deposits.c.effectiveDate, deposits.c.maturityDate, deposits.c.amount).select_from(deposits).join(model.Product, deposits.c.productId == model.Product.id)).mappings().all()
+    # return db.execute(deposit_products).mappings().all()
+
+    for deposit in deposit_products:
+        deposit_data = dict(deposit).copy()
+        current_value  = await getNGDepositValue(deposit_data["depositId"], db)
+        deposit_data["currentValue"] = float(current_value.get("current_value")) / 100
+        deposit_data["netAmount"] = float(deposit_data["amount"]) / 100
+        deposit_data["performance"] = (deposit_data["currentValue"] - float(deposit_data["netAmount"])) / float(deposit_data["netAmount"])
+        deposit_data["accruedInterest"] = current_value.get("accrued_interest") / 100
+        deposit_data["withholdingTax"] = current_value.get("withholding_tax") / 100
+        deposit_data["holdingPeriod"] = (datetime.now() - deposit_data["effectiveDate"]).days
+        assets.append(deposit_data)
 
     return assets
-    
+
 @portfolio.get("/value")
 async def getPortfolioValue(db: db, assets = Depends(getPortfolioAssets)):
 
@@ -217,16 +219,16 @@ async def getPortfolioValue(db: db, assets = Depends(getPortfolioAssets)):
     ngn_current_value = 0
     portfolio_performance = 0
 
-
     for asset in assets:
-        if asset["product"].currency == schemas.Currency.USD:
-            usd_base_value += asset["netAmount"]
+        if asset["currency"] == schemas.Currency.USD:
+            usd_base_value += float(asset["netAmount"])
             usd_current_value += asset["currentValue"]
-        else:
-            ngn_base_value += asset["netAmount"]
+        if asset["currency"] == schemas.Currency.NGN:
+            ngn_base_value += float(asset["netAmount"])
             ngn_current_value += asset["currentValue"]
-        asset_performance = (asset["currentValue"] - asset["netAmount"]) / asset["netAmount"]
-        portfolio_performance += asset_performance * asset["netAmount"]
+        asset_performance = (asset["currentValue"] - float(asset["netAmount"])) / float(asset["netAmount"])
+        portfolio_performance += asset_performance * float(asset["netAmount"])
+    
     return {
         "totalValueUsd": usd_current_value + (ngn_current_value / 1600),
         "totalValueNgn": ngn_current_value + (usd_current_value * 1600),
