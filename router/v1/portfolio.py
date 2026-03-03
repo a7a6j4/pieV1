@@ -423,3 +423,14 @@ async def getPortfolioAdvice(db: db, portfolio: model.Portfolio = Depends(getPor
 
 # def generate_schedule_dates(start_date: datetime, frequency: schemas.Frequency, duration: int)
 
+@portfolio.get("/transaction/all")
+async def getAllPortfolioTransactions(db: db, user: model.User = Depends(auth.getActiveUser)):
+    portfolios = user.portfolios
+    all_transactions = []
+    for portfolio in portfolios:
+        transactions = filter(lambda x: x.status == schemas.TransactionStatus.COMPLETED, portfolio.transactions)
+        all_transactions.extend(list(transactions)) 
+
+    all_transactions = sorted(all_transactions, key=lambda x: x.date, reverse=True)
+    return all_transactions
+
