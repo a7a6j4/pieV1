@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from typing import Any, Optional, List, Union, Annotated
 from datetime import datetime, timedelta
 import model
-from router.v1.product import getPrice
+from router.v1.product import getPrice, getProduct
 from utils.payment_schedule import generate_schedule_dates
 from ..v1.user import getUser
 import schemas
@@ -182,7 +182,7 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
             "netAmount": asset["net_amount"] / 100,
         }
         asset_data["vwac"] = asset["net_amount"] / asset["net_units"]
-        asset_data["currentPrice"] = await getPrice(db=db, product=asset)
+        asset_data["currentPrice"] = await getPrice(db=db, product=getProduct(asset["product"].id))
         asset_data["performance"] = asset_data["currentPrice"] / asset_data["vwac"] - 1
         asset_data["currentValue"] = asset_data["netAmount"] * (1 + asset_data["performance"])
         assets.append(asset_data)
