@@ -623,7 +623,7 @@ async def getUSPrice(ticker: str):
 
 @product.get('/mutual-fund/price')
 async def getNGMutualFundPrice(db: db, variable: model.Product = Depends(getProduct)):
-    mutual_fund_value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == variable.variableId).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
+    mutual_fund_value = db.execute(select(model.VariableValue).where(model.VariableValue.variableId == variable.id).order_by(model.VariableValue.date.desc()).limit(1)).scalar_one_or_none()
     if mutual_fund_value is None:
       return 100.00
     return mutual_fund_value.price
