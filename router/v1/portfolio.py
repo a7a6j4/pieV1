@@ -176,21 +176,30 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
     assets = []
 
     for asset in variable_assets:
-        asset["vwac"] = asset["net_amount"] / asset["net_units"]
-        asset["current_price"] = await getPrice(db=db, product=asset["product"])
-        asset["performance"] = asset["current_price"] / asset["vwac"] - 1
-        asset["current_value"] = asset["net_amount"] * (1 + asset["performance"])
-        assets.append(asset)
+        asset_data = {
+            "product": asset["product"],
+            "netUnits": asset["net_units"],
+            "netAmount": asset["net_amount"] / 100,
+        }
+        asset_data["vwac"] = asset["net_amount"] / asset["net_units"]
+        asset_data["currentPrice"] = await getPrice(db=db, product=asset["product"])
+        asset_data["performance"] = asset_data["currentPrice"] / asset_data["vwac"] - 1
+        asset_data["currentValue"] = asset_data["netAmount"] * (1 + asset_data["performance"])
+        assets.append(asset_data)
 
     deposits = db.execute(select(model.PortfolioDeposit).join_from(model.PortfolioDeposit, model.DepositTransaction, model.PortfolioDeposit.transactionId == model.DepositTransaction.id).where(model.PortfolioDeposit.closed == False, model.PortfolioDeposit.maturityDate >= datetime.now())).mappings().all()
 
     for deposit in deposits:
         current_value = await getNGDepositValue(deposit["PortfolioDeposit"].id, db)
-        deposit["current_value"] = current_value["current_value"] / 100
-        deposit["performance"] = (current_value["current_value"] - current_value["principal"]) / current_value["principal"]
-        deposit["holding_period"] = (min(datetime.now(), deposit["PortfolioDeposit"].maturityDate) - deposit["PortfolioDeposit"].effectiveDate).days
-        deposit["annualized_performance"] = (1 + deposit["performance"])**(365 / deposit["holding_period"]) - 1
-        assets.append(deposit)
+        asset_data = {
+            "product": deposit["PortfolioDeposit"].product,
+            "currentValue": current_value["current_value"] / 100,
+            "netAmount": current_value["principal"] / 100,
+            "performance": (current_value["current_value"] - current_value["principal"]) / current_value["principal"] if current_value["principal"] > 0 else 0,
+            "annualizedPerformance": (1 + asset_data["performance"])**(365 / deposit["PortfolioDeposit"].maturityDate - deposit["PortfolioDeposit"].effectiveDate).days - 1,
+            "holdingPeriod": (min(datetime.now(), deposit["PortfolioDeposit"].maturityDate) - deposit["PortfolioDeposit"].effectiveDate).days,
+        }
+        assets.append(asset_data)
 
     return assets
     
@@ -206,13 +215,13 @@ async def getPortfolioValue(db: db, assets = Depends(getPortfolioAssets)):
 
     for asset in assets:
         if asset["product"].currency == schemas.Currency.USD:
-            usd_base_value += asset["net_amount"]
-            usd_current_value += asset["current_value"]
+            usd_base_value += asset["netAmount"]
+            usd_current_value += asset["currentValue"]
         else:
-            ngn_base_value += asset["net_amount"]
-            ngn_current_value += asset["current_value"]
-        asset_performance = (asset["current_value"] - asset["net_amount"]) / asset["net_amount"]
-        portfolio_performance += asset_performance * asset["net_amount"]
+            ngn_base_value += asset["netAmount"]
+            ngn_current_value += asset["currentValue"]
+        asset_performance = (asset["currentValue"] - asset["netAmount"]) / asset["netAmount"]
+        portfolio_performance += asset_performance * asset["netAmount"]
     return {
         "totalValueUsd": usd_current_value + (ngn_current_value / 1600),
         "totalValueNgn": ngn_current_value + (usd_current_value * 1600),
