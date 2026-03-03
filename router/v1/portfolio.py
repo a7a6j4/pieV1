@@ -177,7 +177,7 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
 
     for asset in variable_assets:
         asset_data = {
-            "product": asset["product"],
+            "product": asset,
             "netUnits": asset["net_units"],
             "netAmount": asset["net_amount"] / 100,
         }
