@@ -167,7 +167,7 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
             net_units_expr.label("net_units"),
             net_amount_expr.label("net_amount"),
         )
-        .join_from(parent_class, model.VariableLedger, model.VariableLedger.variableId == model.Variable.id)
+        .join_from(parent_class, model.VariableLedger, model.VariableLedger.variableId == parent_class.id)
         .where(model.VariableLedger.portfolioId == portfolio.id)
         .group_by(model.Product.id, model.Variable.id, model.Deposit.id)
         .having(net_units_expr > 0)
@@ -175,9 +175,11 @@ async def getPortfolioAssets(db: db, portfolio: model.Portfolio = Depends(getPor
 
     assets = []
 
+    print(variable_assets)
+
     for asset in variable_assets:
         asset_data = {
-            "product": asset,
+            "product": asset["Product"],
             "netUnits": asset["net_units"],
             "netAmount": asset["net_amount"] / 100,
         }
