@@ -18,7 +18,7 @@ from ..v1.portfolio import getPortfolio
 from ..v1.deposit import getLiquidationValue
 from ..v1.journal import prepareJournal
 from ..v1.wallet import generateWalletTransaction, getWalletBalance
-from ..v1.product import getPrice
+from ..v1.product import getPrice, getProduct
 
 transaction = APIRouter(prefix="/transaction", tags=["transaction"])
 
@@ -253,7 +253,7 @@ async def postTransaction(
         # create product transaction for variable and deposit products
         if order["product"].category == "variable":
             # get product price
-            price = (await getPrice(db=db, variable_id=order["product"].id))
+            price = (await getPrice(db=db, product=getProduct(db=db, productId=order["product"].id)))
             units = int(transaction_amount / price)
             port_transaction = model.VariableTransaction(
                 productId=order["product"].id,

@@ -39,6 +39,8 @@ async def searchProducts(
   keyword: str = Query(..., min_length=1, description="Search keyword"),
   page: int = Query(default=1, ge=1),
   type: Optional[str] = Query(enum=["variable", "deposit"], default=None),
+  assetClass: Optional[schemas.AssetClassType] = Query(default=None),
+  productClass: Optional[schemas.ProductClass] = Query(default=None),
 ):
   search_value = keyword.strip()
   if not search_value:
@@ -58,7 +60,16 @@ async def searchProducts(
     )
   )
 
-  return db.execute(base_query.offset((page - 1) * 10)).scalars().all()
+  result = db.execute(base_query.offset((page - 1) * 10)).scalars().all()
+  # extract all product classes and asset classes from the result
+  product_classes = list(set(map(lambda x: {"value": x.productClass, "label": x.productClass.value}, result)))
+  asset_classes = list(set(map(lambda x: {"value": x.assetClass, "label": x.assetClass.value}, result)))
+
+  filters = product_classes + asset_classes
+  return {
+    "products": result,
+    "filters": filters
+  }
 
 @product.get('/', dependencies=[Depends(readUser)])
 async def getProduct(
@@ -509,80 +520,64 @@ async def updateProduct(db: db):
   db.commit()
   return {"message": "Products updated successfully"}
 
-# @product.post('/value')
-# async def addProductValue(db: db, 
-#                           data: list[schemas.VariableValueCreate], 
-#                           id: int,
-#                           type: str = Query(enum=['INDEX', 'PRODUCT']),
-# ):
-  
-#   if type == 'INDEX':
-#     benchmark = await getBenchmark(db, id)
-#     for value in data:
-#       new_value = model.BenchmarkMeta(**value.model_dump())
-#       benchmark.history.append(new_value)
-#       db.add(benchmark)
-#   elif type == 'PRODUCT':
-#     product = await getVariable(db, id)
-#     for value in data:
-#       new_value = model.VariableValue(**value.model_dump())
-#       product.values.append(new_value)
-#       db.add(product)
+@product.post('/value')
+async def addProductValue(db: db, 
+                          data: list[schemas.VariableValueCreate], 
+                          id: int = Query(..., description="Product or benchmark ID"),
+                          type: str = Query(enum=['INDEX', 'PRODUCT']),
+):
 
-#   db.commit()
-#   return {"message": "Product values added successfully"}
+  if type == 'PRODUCT':
+    product = db.get(model.Variable, id)
+    if not product:
+      raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    for value in data:
+      new_value = model.VariableValue(**value.model_dump(), variableId=product.id)
+      product.values.append(new_value)
+      db.add(product)
+
+  if type == 'INDEX':
+    benchmark = db.get(model.Benchmark, id)
+    if not benchmark:
+      raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benchmark not found")
+    for value in data:
+      new_value = model.BenchmarkValue(**value.model_dump(), benchmarkId=benchmark.id)
+      benchmark.history.append(new_value)
+      db.add(benchmark)
+
+  db.commit()
+  return {"message": "Product values added successfully"}
+
+@product.patch('/value')
+async def updateProductValue(db: db, date: datetime, value: float, id: int = Query(..., description="Product or benchmark ID"), type: str = Query(enum=['INDEX', 'PRODUCT']),):
+
+  if type == 'PRODUCT':
+    product = db.get(model.Variable, id)
+    if not product:
+      raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    new_product_value = db.execute(update(model.VariableValue).where(model.VariableValue.variableId == product.id, model.VariableValue.date == date).values(value=value)).scalar_one_or_none()
+    if new_product_value is None:
+      new_product_value = model.VariableValue(variableId=product.id, date=date, value=value)
+      db.add(new_product_value)
+
+  if type == 'INDEX':
+    benchmark = db.get(model.Benchmark, id)
+    if not benchmark:
+      raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benchmark not found")
+    new_benchmark_value = db.execute(update(model.BenchmarkValue).where(model.BenchmarkValue.benchmarkId == benchmark.id, model.BenchmarkValue.date == date).values(value=value)).scalar_one_or_none()
+    if new_benchmark_value is None:
+      new_benchmark_value = model.BenchmarkValue(benchmarkId=benchmark.id, date=date, value=value)
+      db.add(new_benchmark_value)
+
+  db.commit()
+  return {"message": f"{type} value updated successfully", "value": new_product_value if type == 'PRODUCT' else new_benchmark_value}
 
 class BulkValueIn(BaseModel):
   date: datetime
   value: float
   ticker: str
 
-
-@product.post('/bulk-value')
-async def addBulkValue(db: db, 
-                       data: list[schemas.VariableValueCreate],
-                       ):
-
-  seen = set()
-  unique_items = []
-  for item in data:
-    key = (item.date, item.var_id)
-    if key not in seen:
-        unique_items.append(item)
-        seen.add(key)
-
-  max_id = db.execute(select(func.max(model.VariableValue.id))).scalar_one_or_none()
-  if max_id is None:
-    max_id = 0
-
-  for value in unique_items:
-    
-    stock = db.get(model.Variable, value.var_id)
-
-    if stock is not None:
-      new_value = model.VariableValue(**value.model_dump(exclude={'var_id'}), id=max_id + 1)
-      stock.values.append(new_value)
-      db.add(stock)
-      max_id += 1 
-    
-  db.commit()
-  return {"message": "Product values added successfully"}
-
-
-class TestIn(BaseModel):
-  id: str
-
-@product.post('/test')
-async def test(db: db):
-
-  products = db.execute(select(model.Variable).where(model.Variable.product_class == schemas.ProductClass.FUND, model.Variable.currency == schemas.Currency.NGN, model.Variable.risk_level == 5)).scalars().all()
-
-  for product in products:
-    product.benchmark_id = 2
-    db.add(product)
-
-  db.commit()
-  return {"message": "Products updated successfully"}
   # df = pd.DataFrame()
 
   # for item in data:

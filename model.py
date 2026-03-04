@@ -313,6 +313,18 @@ class Benchmark(Base):
 
     portfolios: Mapped[List["Portfolio"]] = relationship()
     products: Mapped[List["Product"]] = relationship()
+    history: Mapped[List["BenchmarkValue"]] = relationship(back_populates="benchmark")
+
+class BenchmarkValue(Base):
+    __tablename__ = "benchmarkvalue"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    benchmarkId: Mapped[int] = mapped_column(ForeignKey("benchmark.id"))
+    value: Mapped[float]
+    date: Mapped[datetime]
+
+    benchmark: Mapped["Benchmark"] = relationship(back_populates="values")
+
+    __table_args__ = (UniqueConstraint("benchmarkId", "date"),)
 
 class Product(Base):
     __tablename__ = "product"
