@@ -322,7 +322,7 @@ class BenchmarkValue(Base):
     value: Mapped[float]
     date: Mapped[datetime]
 
-    benchmark: Mapped["Benchmark"] = relationship(back_populates="values")
+    benchmark: Mapped["Benchmark"] = relationship()
 
     __table_args__ = (UniqueConstraint("benchmarkId", "date"),)
 
