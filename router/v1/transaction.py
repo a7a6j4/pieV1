@@ -253,7 +253,7 @@ async def postTransaction(
         # create product transaction for variable and deposit products
         if order["product"].category == "variable":
             # get product price
-            price = (await getPrice(db=db, product=getProduct(db=db, productId=order["product"].id)))
+            price = await getPrice(db=db, product=await getProduct(db=db, productId=order["product"].id))
             units = int(transaction_amount / price)
             port_transaction = model.VariableTransaction(
                 productId=order["product"].id,
