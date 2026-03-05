@@ -986,13 +986,13 @@ class IncomeAdvisoryCreate(BaseModel):
     frequency: Frequency
     currency: Currency = Currency.NGN
     income: Optional[float] = None
-    investment: Optional[float] = None
+    currentValue: Optional[float] = None
     duration: Optional[int] = None
     liquidation: bool = False
 
 class growthParams(BaseModel):
     targetAmount: Annotated[Optional[float], field(gt=0)] = None
-    investment: Annotated[Optional[float], field(gt=0)] = None
+    currentValue: Annotated[Optional[float], field(gt=0)] = None
     targetDate: Annotated[Optional[datetime], field(gt=date.today())] = None
     currency: Currency = Currency.NGN
     duration: Optional[int] = None
@@ -1000,7 +1000,7 @@ class growthParams(BaseModel):
 
     @model_validator(mode='after')
     def validate_target_amount(self):
-        if self.targetAmount is not None and self.investment is not None and self.investment > self.targetAmount:
+        if self.targetAmount is not None and self.currentValue is not None and self.currentValue > self.targetAmount:
             raise ValueError("Investment must be less than target amount")
         return self
 

@@ -28,7 +28,7 @@ advisory = APIRouter(
 
 
 @advisory.get("/independence")
-async def getFinancialIndependence(db: db, user = Depends(auth.getActiveUser)):
+async def getFinancialIndependence(db: db, user: Annotated[model.User, Depends(getUserRiskProfile)]):
   """
     Check total assets as a proportion of annual income
     investment income is estimated return on assets, subtracted from the total income to get the required investment value to hold.
@@ -39,11 +39,12 @@ async def getFinancialIndependence(db: db, user = Depends(auth.getActiveUser)):
   total_ngn = 0
 
   for portfolio in user.portfolios:
-    portfolio_value = await getPortfolioValue(products=await getPortfolioAssets(db, portfolio=portfolio))
-    total_usd += portfolio_value.get("totalInUsd", 0.00)
-    total_ngn += portfolio_value.get("totalInNgn", 0.00)
+    portfolio_value = await getPortfolioValue(db, await getPortfolioAssets(db, portfolio=portfolio))
+    total_usd += portfolio_value.get("totalValueUsd", 0.00)
+    total_ngn += portfolio_value.get("totalValueNgn", 0.00)
 
   net_worth = total_ngn
+  
 
   annual_income = float(user.riskProfile.monthly_income) * 12
   required_investment = float(annual_income) / 0.20 # required asset value to meet income
@@ -66,7 +67,7 @@ async def recommendIndependence(db: db, user = Depends(getUser)):
 @advisory.get("/emergency-risk")
 async def getEmergencyRisk(
     db: db, 
-    user: model.User = Depends(auth.getActiveUser)):
+    user: Annotated[model.User, Depends(getUserRiskProfile)]):
   """
     Check total low risk liquid assets as a proportion of 6 months income target amount
     ratio has to be greater then 1. can track state by how close to one
@@ -99,7 +100,7 @@ async def recommendEmergencyRisk(user = Depends(getUser)):
   pass
 
 @advisory.get("/liquidity-risk")
-async def getLiquidRisk(db: db, user = Depends(getUser)):
+async def getLiquidRisk(db: db, user: Annotated[model.User, Depends(getUserRiskProfile)]):
 
   """
     Check all assets with horizon less than 1 compared to total net worth
@@ -153,202 +154,52 @@ class RecommendationType(enum.Enum):
   INCOME = "income"
   GROWTH = "growth"
 
-async def getHigestReturnVariable(db: db, variables_subquery):
-    """
-    Accepts a SQLAlchemy selectable (subquery) for variable (product) IDs, and returns each product and its latest value and date.
-    Example usage: getHigestReturnVariable(db, select(Variable.id).where(...))
-    """
 
-    # Subquery: get the latest date for each product (var_id)
-    latest_dates_subq = (
-        select(
-            model.VariableValue.var_id,
-            func.max(model.VariableValue.date).label("latest_date")
-        )
-        .where(
-            model.VariableValue.var_id.in_(variables_subquery),
-        )
-        .group_by(model.VariableValue.var_id)
-        .subquery()
-    )
 
-    # Main query: join Product, VariableValue, and the subquery
-    query = (
-        select(model.Product, model.VariableValue.value.label("latestValue"), model.VariableValue.date)
-        .join(model.VariableValue, model.Product.id == model.VariableValue.var_id)
-        .join(
-            latest_dates_subq,
-            and_(
-                model.VariableValue.var_id == latest_dates_subq.c.var_id,
-                model.VariableValue.date == latest_dates_subq.c.latest_date
-            )
-        )
-        .where(model.Product.id.in_(variables_subquery), model.VariableValue.date <= datetime.now())
-        .limit(3)
-        .order_by(model.VariableValue.date.desc())
-    )
-
-    result = db.execute(query).mappings().all()
-
-    return result    
-
-async def getHigestReturnDeposit(db: db, deposits_subquery):
+async def getHighestReturnIncomeProduct( db: db,
+  portfolio: model.Portfolio = Depends(getPortfolio)):
   """
   Accepts a SQLAlchemy selectable (subquery) for deposit (product) IDs, and returns each product and its latest value and date.
   Example usage: getHigestReturnDeposit(db, select(Deposit.id).where(...))
   """ 
 
   # Subquery: get the latest date for each product (var_id)
-  latest_dates_subq = (
-      select(
-          model.DepositRate.deposit_id,
-          func.max(model.DepositRate.date).label("latest_date")
-      )
-      .where(model.DepositRate.deposit_id.in_(deposits_subquery))
-      .group_by(model.DepositRate.deposit_id)
-      .subquery()
-  )
-    
-  query = (select(model.Product, model.DepositRate.rate.label("latestValue"), model.  DepositRate.date)
-        .join(model.DepositRate, model.Product.id == model.DepositRate.deposit_id)
-        .join(
-            latest_dates_subq,
-            and_(
-                model.DepositRate.deposit_id == latest_dates_subq.c.deposit_id,
-                model.DepositRate.date == latest_dates_subq.c.latest_date
-            )
-        )
-        .where(model.DepositRate.deposit_id.in_(deposits_subquery), model.DepositRate.date <= datetime.now())
-        .limit(3)
-        .order_by(model.DepositRate.date.desc())
-        )
-    
-  result = db.execute(query).mappings().all()
+# get highest return variable or deposit product
 
-  return result
-
-@advisory.get("/savings")
-async def getSavingsRecommendation(db: db,
-  attributes: Annotated[schemas.SavingsRecommendationCreate, Query()],
-  ):
-  """
-    Get savings recommendation for the user
-  """
-  benchmark = db.execute(select(model.Benchmark).where(model.Benchmark.symbol == 'FGN90')).scalar_one_or_none()
-
-  if not benchmark:
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Benchmark not found")
-
-  benchmarkYield = db.execute(select(model.BenchmarkHistory).join_from(model.BenchmarkHistory, model.Benchmark).where(model.BenchmarkHistory.benchmark_id == benchmark.id).order_by(model.BenchmarkHistory.date.desc())).first()
-
-  if not benchmarkYield:
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Benchmark yield not found")
-
-  variableProducts = select(model.Variable.id).where(model.Variable.horizon <= 1)
-  depositProducts = select(model.Deposit.id)
-
-  if attributes.tenor and attributes.tenor < 90:
-    depositProducts = depositProducts.where(model.Deposit.fixed == False)
-  elif attributes.tenor and attributes.tenor >= 90:
-    depositProducts = depositProducts.where(model.Deposit.max_tenor >= attributes.tenor, model.Deposit.min_tenor <= attributes.tenor)
+  base_model = with_polymorphic(model.Product, [model.Variable, model.Deposit])
+  base_query = select(base_model).where(base_model.isActive == True)
+  result = []
   
-  if attributes.currency:
-    variableProducts = variableProducts.where(model.Variable.currency == attributes.currency)
-    depositProducts = depositProducts.where(model.Deposit.currency == attributes.currency)
+  base_query = base_query.where(base_model.currency == portfolio.income.currency, base_model.horizon <= 1)
   
-  variableProducts = await getHigestReturnVariable(db, variableProducts.subquery())
-  depositProducts = await getHigestReturnDeposit(db, depositProducts.subquery())
+  frequency = portfolio.income.frequency
+  tenor = schemas.tenor_map[frequency]
+  if frequency == schemas.Frequency.MONTHLY:
+    base_query = base_query.where(or_(model.Deposit.maxTenor.in_([30, 31]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.MONTHLY)))
+  elif frequency == schemas.Frequency.QUARTERLY:
+    base_query = base_query.where(or_(model.Deposit.maxTenor.in_([90, 91, 92]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.QUARTERLY)))
+  elif frequency == schemas.Frequency.SEMIANNUALLY:
+    base_query = base_query.where(or_(model.Deposit.maxTenor.in_([180, 181, 182]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.SEMIANNUALLY)))
+  elif frequency == schemas.Frequency.ANNUALLY:
+    base_query = base_query.where(or_(model.Deposit.maxTenor.in_([364, 365, 366]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.ANNUALLY)))
+  
+  products = db.execute(base_query.limit(3)).scalars().all()
+  for product in products:
+    recomendation = {
+      "product": product,
+      "estAnnualReturn": product.rate if product.category == schemas.ProductClass.DEPOSIT else 8 if product.currency == schemas.Currency.USD else 20,
+    }
 
-  filteredProducts = variableProducts + depositProducts
-  filteredProducts = sorted(filteredProducts, key=lambda x: x.latestValue, reverse=True)
+    result.append(recomendation)
   
-  filteredProducts = filteredProducts[:4]
-  preferredProduct = filteredProducts[0]
-  
-  def addEstimatedFutureValue(product):
-    latest_value = float(product.latestValue) if product.latestValue else 1e-9
-    frequency = attributes.tenor
-    estimated_future_value = attributes.amount * (1 + (latest_value * frequency / 365))
-    d = dict(product)
-    d['estimatedFutureValue'] = estimated_future_value
-    d['earnedInterest'] = estimated_future_value - attributes.amount
-    return d
-  
-  if attributes.amount:
-    if attributes.tenor and attributes.tenor < 90:
-      preferredProduct = addEstimatedFutureValue(preferredProduct)
-      filteredProducts = list(map(addEstimatedFutureValue, filteredProducts))
-    elif attributes.tenor and attributes.tenor >= 90:
-      preferredProduct = addEstimatedFutureValue(preferredProduct)
-      filteredProducts = list(map(addEstimatedFutureValue, filteredProducts))
-  
-  return {
-    "preferred": preferredProduct,
-    "others": filteredProducts
-  }
+  new_result = sorted(result, key=lambda x: x["estAnnualReturn"])
+  return new_result
 
 class FrequencyDays(enum.IntEnum):
   monthly = 30
   quarterly = 91
   annual = 365
   semiannual = 182
-
-@advisory.get("/income")
-async def getIncomeAdvisory(db: db,
- attributes: Annotated[schemas.IncomeAdvisoryCreate, Query()]):
-  """
-    Get income advisory for the user
-  """
-
-  variableProducts = select(model.Variable.id).where(or_(model.Variable.horizon <= 1)).subquery()
-  depositProducts = select(model.Deposit.id).where(model.Deposit.max_tenor >= FrequencyDays[attributes.frequency.value].value, model.Deposit.min_tenor <= FrequencyDays[attributes.frequency.value].value).subquery()
-
-  variableProducts = await getHigestReturnVariable(db, variableProducts)
-  depositProducts = await getHigestReturnDeposit(db, depositProducts)
-
-  recommendedProducts = variableProducts + depositProducts
-  recommendedProducts = sorted(recommendedProducts, key=lambda x: x.latestValue, reverse=True)
-  recommendedProducts = recommendedProducts[:4]
-
-  # Add requiredInvestment attribute to each product using the formula
-  def add_required_investment(product):
-      # Defensive: avoid division by zero
-      latest_value = float(product.latestValue) if product.latestValue else 1e-9
-      frequency = FrequencyDays[attributes.frequency.value].value
-      required_investment = float(attributes.income) / latest_value / (frequency / 365)
-      d = dict(product)
-      d['requiredInvestment'] = required_investment
-      return d
-
-  def addEstimatedIncome(product):
-    latest_value = float(product.latestValue) if product.latestValue else 1e-9
-    frequency = FrequencyDays[attributes.frequency.value].value
-    estimated_income = attributes.investment * latest_value * frequency / 365 
-    d = dict(product)
-    d['estimatedIncome'] = estimated_income
-    return d
-  
-  preferredProduct = recommendedProducts[0]
-
-  if attributes.liquidation:
-      preferredProduct = variableProducts[0] if variableProducts else depositProducts[0]
-
-  if attributes.income:
-      # If you want to update recommendedProducts based on amount, do it here
-      preferredProduct = add_required_investment(preferredProduct)
-      recommendedProducts = list(map(add_required_investment, recommendedProducts))
-
-
-  if attributes.investment:
-    recommendedProducts = list(map(addEstimatedIncome, recommendedProducts))
-    preferredProduct = addEstimatedIncome(preferredProduct)
-
-
-  return {
-    "preferred": preferredProduct,
-    "others": recommendedProducts
-  }
-
 
 class EquityAllocationLimit(enum.Enum):
   MINMHORIZON = 3
@@ -362,28 +213,6 @@ class UserRiskFactor(enum.Enum):
   LOW = 0
 
 AGELIMIT = 60
-
-async def getBestProducts(db:db, durationDays: int, currency: schemas.Currency):
-  # best performing index or fund product
-  ngnEquityProduct = select(model.Variable).where(model.  Variable.symbol == "NGN20")
-  usdEquityProduct = select(model.Variable).where(model.  Variable.symbol == "SPY")
-
-# Highest return money market or deposit product
-  usdBondProduct = select(model.Deposit).where(model.Deposit.currency == schemas.Currency.USD)
-  ngnBondProduct = select(model.Deposit).where(model.Deposit.currency == schemas.Currency.NGN)
-
-  lowRiskProducts = select(model.Variable.id).where(model.Variable.horizon <= 1)
-  depositProducts = select(model.Deposit.id).where(model.Deposit.max_tenor >= durationDays, model.Deposit.min_tenor <= durationDays)
-
-  lowRiskProducts = await getHigestReturnVariable(db, lowRiskProducts)
-  depositProducts = await getHigestReturnDeposit(db, depositProducts)
-
-  recommendedLowRiskProducts = sorted(lowRiskProducts + depositProducts, key=lambda x: x.latestValue, reverse=True)
-
-  if currency == schemas.Currency.USD:
-    return usdEquityProduct, usdBondProduct, recommendedLowRiskProducts[0]
-  elif currency == schemas.Currency.NGN:
-    return ngnEquityProduct, ngnBondProduct
 
 def getAllocation(duration: int, riskFactor: UserRiskFactor, age: int):
 
@@ -414,192 +243,32 @@ def getWeightedReturn(allocation: dict, currency: str, bond_return: float) -> fl
     )
     return weighted
 
-@advisory.get("/growth")
-async def getTargetRecommendation(db: db,
-  attributes: Annotated[schemas.growthParams, Query()]):
-  """
-    Get target recommendation for the user
-  """
-
-  if attributes.targetDate is None and attributes.duration is None:
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target date or duration is required")
-
-  if attributes.targetDate is not None and attributes.duration is not None:
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Target date and duration cannot be provided together. Please provide only one.")
-
-  future_date = datetime.now() + relativedelta(months=attributes.duration) if attributes.duration else attributes.targetDate
-
-  time_diff = relativedelta(future_date, datetime.now())
-  days_diff = (future_date - datetime.now()).days
-
-  lowRiskProducts = select(model.Variable.id).where(model.Variable.horizon <= 1, model.Variable.currency == attributes.currency.value)
-  depositProducts = select(model.Deposit.id).where(model.Deposit.max_tenor >= min(365,days_diff), model.Deposit.min_tenor <= min(365,days_diff), model.Deposit.currency == attributes.currency.value)
-
-  lowRiskProducts = await getHigestReturnVariable(db, lowRiskProducts)
-  depositProducts = await getHigestReturnDeposit(db, depositProducts)
-
-  recommendedLowRiskProducts = sorted(lowRiskProducts + depositProducts, key=lambda x: x.latestValue, reverse=True)
-
-  equityProductUSD = select(model.Variable).where(model.Variable.symbol == "SPY")
-  equityProductNGN = select(model.Variable).where(model.Variable.id == 2779)
-
-  equityProduct = db.execute(equityProductUSD if attributes.currency.value == schemas.Currency.USD.value else equityProductNGN).scalar_one_or_none()
-
-  if not equityProduct:
-    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Equity product not found")
-  
-  yearDuration = (future_date - datetime.now()).days/365
-
-  daysToTarget = time_diff.days
-
-  monthNper = math.floor(time_diff.years * 12 + time_diff.months) if attributes.investment is not None else math.floor(time_diff.years * 12 + time_diff.months) - 1
-  quarterNper = math.floor(time_diff.years * 4 + time_diff.months / 3) if attributes.investment is not None else math.floor(time_diff.years * 4 + time_diff.months / 3) - 1
-  semiAnnualNper = math.floor(time_diff.years * 2 + time_diff.months / 6) if attributes.investment is not None else math.floor(time_diff.years * 2 + time_diff.months / 6) - 1
-  yearNper = 1 if time_diff.years <= 0 else math.floor(time_diff.years) if attributes.investment is not None else math.floor(time_diff.years) - 1
-
-  allocation = getAllocation(yearDuration, UserRiskFactor.HIGH, 35)
-  weightedReturn = getWeightedReturn(allocation, attributes.currency.value, float(recommendedLowRiskProducts[0].latestValue))
-
-  if not attributes.target:
-    response = {
-      "duration": {
-        "years": time_diff.years,
-        "months": time_diff.months,
-        "days": time_diff.days,
-      },
-      "estPortfolioAnnualReturn": weightedReturn,
-      "portfolio": {
-        "bond" : {
-          "allocation": allocation.get('bond', 0),
-          "product": recommendedLowRiskProducts[0],
-          "estAnnualReturn": recommendedLowRiskProducts[0].latestValue
-        }
-      }}
-
-    if allocation.get('equity', 0) > 0:
-        response["portfolio"]["equity"] = {
-          "allocation": allocation.get('equity', 0),
-          "product": equityProduct,
-          "estAnnualReturn": 0.30
-        }
-
-    return response 
-
-  when = 'begin'
-
-  #future of today's investment
-  invFv = npf.fv(weightedReturn, yearDuration, 0, -attributes.investment, when=when) if attributes.investment is not None else 0
-  # Net discounted target amount 
-  discountedTargetAmount = (attributes.targetAmount / (1 + weightedReturn) ** daysToTarget) - invFv
-  
-  monthlyContribution = npf.pmt(weightedReturn / 12, monthNper, 0,discountedTargetAmount, when=when)
-  quarterlyContribution = npf.pmt(weightedReturn / 4, quarterNper, 0,discountedTargetAmount, when=when)
-  semiAnnualContribution = npf.pmt(weightedReturn / 2, semiAnnualNper, 0,discountedTargetAmount, when=when)
-  yearlyContribution = npf.pmt(weightedReturn, yearNper, 0,discountedTargetAmount, when=when)
-
-  result = {
-    "duration": {
-      "years": time_diff.years,
-      "months": time_diff.months,
-      "days": time_diff.days,
-    },
-    "porfolio": {
-      "bond" : {
-        "allocation": allocation.get('bond', 0),
-        "product": recommendedLowRiskProducts[0],
-        "estAnnualReturn": recommendedLowRiskProducts[0].latestValue
-      }
-    },
-    "peridicContribution": {
-      "monthly": {
-        "contribution": monthlyContribution,
-        "nper": monthNper
-      },
-      },
-    "estPortfolioAnnualReturn": weightedReturn
-  }
-
-  if semiAnnualNper > 4:
-    result["peridicContribution"]["semiAnnual"] = {
-      "contribution": semiAnnualContribution,
-      "nper": semiAnnualNper
-    }
-
-  if quarterNper > 4:
-    result["peridicContribution"]["quarterly"] = {
-      "contribution": quarterlyContribution,
-      "nper": quarterNper
-    }
-
-  if yearNper > 2:
-    result["peridicContribution"]["yearly"] = {
-      "contribution": yearlyContribution,
-      "nper": yearNper
-    }
-
-  result["upfrontInvestment"] = attributes.investment if attributes.investment is not None else 0
-
-  if allocation.get('equity', 0) > 0:
-    result["porfolio"]["equity"] = {
-      "allocation": allocation.get('equity', 0),
-      "product": equityProduct,
-      "estAnnualReturn": 0.30
-    }
-
-  if attributes.target:
-    return result
-  else:
-    pass
 
 @advisory.get("/portfolio/allocation")
 async def getPortfolioAllocation(db: db, portfolio: model.Portfolio = Depends(getPortfolio)):
   pass
+
 
 @advisory.get("/new-portfolio")
 async def getNewPortfolioAllocation(
   db: db,
   portfolio: model.Portfolio = Depends(getPortfolio), 
   ):
-  # get highest return variable or deposit product
+
   base_model = with_polymorphic(model.Product, [model.Variable, model.Deposit])
   base_query = select(base_model).where(base_model.isActive == True)
   result = []
 
   if portfolio.income is not None:
-    base_query = base_query.where(base_model.currency == portfolio.income.currency, base_model.horizon <= 1)
-    
-    frequency = portfolio.income.frequency
-    tenor = schemas.tenor_map[frequency]
-    if frequency == schemas.Frequency.MONTHLY:
-      base_query = base_query.where(or_(model.Deposit.maxTenor.in_([30, 31]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.MONTHLY)))
-    elif frequency == schemas.Frequency.QUARTERLY:
-      base_query = base_query.where(or_(model.Deposit.maxTenor.in_([90, 91, 92]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.QUARTERLY)))
-    elif frequency == schemas.Frequency.SEMIANNUALLY:
-      base_query = base_query.where(or_(model.Deposit.maxTenor.in_([180, 181, 182]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.SEMIANNUALLY)))
-    elif frequency == schemas.Frequency.ANNUALLY:
-      base_query = base_query.where(or_(model.Deposit.maxTenor.in_([364, 365, 366]), model.Variable.horizon == 1, model.Variable.attributes.has(model.VariableAttributes.distribution == schemas.Frequency.ANNUALLY)))
-
-    products = db.execute(base_query.limit(3)).scalars().all()
-
+    products = await getHighestReturnIncomeProduct(db, portfolio)
     for product in products:
-
-      recomendation = {
-        "product": product,
-        "estAnnualReturn": product.rate if product.category == schemas.ProductClass.DEPOSIT else 8 if product.currency == schemas.Currency.USD else 20,
-      }
-      if portfolio.income.amount is not None:
-        numerator = portfolio.income.amount * 12 if frequency == schemas.Frequency.MONTHLY else portfolio.income.amount * 4 if frequency == schemas.Frequency.QUARTERLY else portfolio.income.amount * 2 if frequency == schemas.Frequency.SEMIANNUALLY else portfolio.income.amount
-        denominator = ((product.rate if product.category == schemas.ProductClass.DEPOSIT else 8 if product.currency == schemas.Currency.USD else 20) / 100)
-        required_amount = numerator / denominator
-        recomendation["amount"] = required_amount
-
-      result.append(recomendation)
-
-      new_result = sorted(result, key=lambda x: x["estAnnualReturn"])
-    
-      return {"recomendation": new_result}
-
-  elif portfolio.type in [schemas.PortfolioType.TARGET, schemas.PortfolioType.GROWTH, schemas.PortfolioType.INVEST]:
+      numerator = portfolio.income.amount * 12 if portfolio.income.frequency == schemas.Frequency.MONTHLY else portfolio.income.amount * 4 if portfolio.income.frequency == schemas.Frequency.QUARTERLY else portfolio.income.amount * 2 if portfolio.income.frequency == schemas.Frequency.SEMIANNUALLY else portfolio.income.amount
+      denominator = ((product.rate if product.category == schemas.ProductClass.DEPOSIT else 8 if product.currency == schemas.Currency.USD else 20) / 100)
+      product.amount = numerator / denominator
+      result.append(product)
+    return {"recomendation": result}
+  
+  if portfolio.type in [schemas.PortfolioType.TARGET, schemas.PortfolioType.GROWTH, schemas.PortfolioType.INVEST]:
 
     # get highest expected return variable product
       if portfolio.target:

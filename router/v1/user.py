@@ -396,16 +396,15 @@ async def uploadKycFile(
     return {"message": "File uploaded successfully", "file_path": file_path}
 
 @user.get("/kyc")
-async def getUserKyc(db: db, user: Annotated[model.User, Security(getUser, scopes=["createUser"])]):
-    kyc = db.execute(select(model.Kyc).where(model.Kyc.userId == user.id)).scalar_one_or_none()
-    if kyc is None:
+async def getUserKyc(user: Annotated[model.User, Depends(auth.getActiveUser)]):
+    if user.kyc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="KYC not found")
-    return kyc
+    return user
 
-async def checkKycVerification(kyc: Annotated[model.Kyc, Depends(getUserKyc)]):
-    if kyc.identityVerified is False and kyc.verified is False:
+async def checkKycVerification(user: Annotated[model.User, Depends(auth.getActiveUser)]):
+    if user.kyc.identityVerified is False and user.kyc.verified is False:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="KYC not verified")
-    return kyc
+    return user
 
 @user.get("/file")
 async def getFile(user_id: str, type: schemas.UserDocumentType):

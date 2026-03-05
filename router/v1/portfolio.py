@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from typing import Any, Optional, List, Union, Annotated
 from datetime import datetime, timedelta
 import model
+from router.v1.advisory import getHighestReturnIncomeProduct
 from router.v1.product import getPrice, getProduct
 from utils.payment_schedule import generate_schedule_dates
 from ..v1.user import getUser
@@ -433,4 +434,3 @@ async def getAllPortfolioTransactions(db: db, user: model.User = Depends(auth.ge
 
     all_transactions = sorted(all_transactions, key=lambda x: x.date, reverse=True)
     return all_transactions
-
