@@ -48,7 +48,7 @@ async def getFinancialIndependence(db: db, user: Annotated[model.User, Depends(g
   required_investment = annual_income / 0.07 if user.riskProfile.primary_income_currency == schemas.Currency.USD else annual_income / 0.20 # required asset value to meet income
   
   gap = (required_investment - net_worth) if required_investment <= net_worth else 0
-  independence = (net_worth / required_investment)
+  independence = max(1, net_worth / required_investment)
   return {
     "annualIncome": annual_income,
     "requiredInvestment": required_investment,
@@ -84,7 +84,7 @@ async def getEmergencyRisk(
     "emergencyFundValue": emergency_fund_value.get("totalValueNgn") if target_currency == schemas.Currency.NGN else emergency_fund_value.get("totalValueUsd"),
     "targetEmergencyFund": target_emergency_fund,
     "targetCurrency": target_currency,
-    "ratio": 1 if ratio > 1 else ratio,
+    "ratio": max(1, ratio),
   }
 
 async def recommendEmergencyRisk(user = Depends(getUser)):
