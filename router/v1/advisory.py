@@ -81,9 +81,9 @@ async def getEmergencyRisk(
   emergency_portfolio = list(filter(lambda x: x.type == schemas.PortfolioType.EMERGENCY, user.portfolios))
 
   emergency_fund_value = await getPortfolioValue(db, await getPortfolioAssets(db, portfolio=emergency_portfolio[0]))
-  target_currency = emergency_portfolio[0].get("target").get("currency")
+  target_currency = emergency_portfolio[0].target.currency
 
-  target_emergency_fund = emergency_portfolio[0].get("target").get("amount")
+  target_emergency_fund = emergency_portfolio[0].target.amount
   ratio = emergency_fund_value.get("totalValueNgn") if target_currency == schemas.Currency.NGN else emergency_fund_value.get("totalValueUsd") / target_emergency_fund
   
   return {
