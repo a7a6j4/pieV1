@@ -78,23 +78,19 @@ async def getEmergencyRisk(
   if not user.riskProfile:
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Risk profile not found")
 
-  usdLowRiskAssetValue = 0
-  ngnLowRiskAssetValue = 0
+  emergency_portfolio = filter(lambda x: x.type == schemas.PortfolioType.EMERGENCY, user.portfolios)
 
-  for portfolio in user.portfolios:
-    assetInPortfolio = await getPortfolioAssets(db, portfolio=portfolio)
-    lowRiskAssets = list(filter(lambda x: x["Product"].risk_level <= 1, assetInPortfolio))
-    usdLowRiskAssetValue += sum(map(lambda x: x.get("total_value", 0.00) if x.get("Product").currency == model.Currency.USD else 0.00, lowRiskAssets))
-    ngnLowRiskAssetValue += sum(map(lambda x: x.get("total_value", 0.00) if x.get("Product").currency == model.Currency.NGN else 0.00, lowRiskAssets))
+  emergency_fund_value = await getPortfolioValue(db, await getPortfolioAssets(db, portfolio=emergency_portfolio[0]))
+  target_currency = emergency_portfolio[0].get("target").get("currency")
 
-  target_amount = user.riskProfile.monthly_income * 6
-  ratio = (ngnLowRiskAssetValue + (usdLowRiskAssetValue * 1500)) / float(target_amount)
-
+  target_emergency_fund = emergency_portfolio[0].get("target").get("amount")
+  ratio = emergency_fund_value.get("totalValueNgn") if target_currency == schemas.Currency.NGN else emergency_fund_value.get("totalValueUsd") / target_emergency_fund
+  
   return {
-      "emergencyFundValue": (ngnLowRiskAssetValue + (usdLowRiskAssetValue * 1500)),
-      "targetEmergencyFund": float(target_amount),
-      "ratio": ratio,
-      "message": "You have sufficent investments to mitigate financial emergency risk!" if ratio >= 1 else "Your emergency fund needs to be increased."
+    "emergencyFundValue": emergency_fund_value.get("totalValueNgn") if target_currency == schemas.Currency.NGN else emergency_fund_value.get("totalValueUsd"),
+    "targetEmergencyFund": target_emergency_fund,
+    "targetCurrency": target_currency,
+    "ratio": ratio,
   }
 
 async def recommendEmergencyRisk(user = Depends(getUser)):
