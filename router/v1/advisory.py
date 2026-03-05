@@ -45,7 +45,7 @@ async def getFinancialIndependence(db: db, user: Annotated[model.User, Depends(g
   net_worth = in_ngn if user.riskProfile.primary_income_currency == schemas.Currency.NGN else in_usd
   
   annual_income = user.riskProfile.monthly_income * 12 
-  required_investment = annual_income / 0.07 if user.riskProfile.primary_income_currency == schemas.Currency.USD else annual_income / 0.20 # required asset value to meet income
+  required_investment = float(annual_income) / 0.07 if user.riskProfile.primary_income_currency == schemas.Currency.USD else annual_income / 0.20 # required asset value to meet income
   
   gap = (required_investment - net_worth) if required_investment <= net_worth else 0
   independence = max(1, net_worth / required_investment)
