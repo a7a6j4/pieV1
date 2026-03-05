@@ -39,8 +39,8 @@ async def getFinancialIndependence(db: db, user: Annotated[model.User, Depends(g
   total_ngn = 0
 
   user_value = await getUserValue(db, user)
-  in_ngn = user_value.get("inNgn")
-  in_usd = user_value.get("inUsd")
+  in_ngn = user_value.get("totalValueNgn")
+  in_usd = user_value.get("totalValueUsd")
 
   net_worth = in_ngn if user.riskProfile.primary_income_currency == schemas.Currency.NGN else in_usd
   
