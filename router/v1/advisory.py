@@ -39,18 +39,12 @@ async def getFinancialIndependence(db: db, user: Annotated[model.User, Depends(g
   total_ngn = 0
 
   user_value = await getUserValue(db, user)
-  in_ngn = user_value.get("totalValueNgn")
-  in_usd = user_value.get("totalValueUsd")
+  in_ngn = user_value.get("inNgn")
+  in_usd = user_value.get("inUsd")
 
-  if user.riskProfile.primary_income_currency == schemas.Currency.NGN:
-    net_worth = in_ngn
-  elif user.riskProfile.primary_income_currency == schemas.Currency.USD:
-    net_worth = in_usd
-  else:
-    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid income currency")
+  net_worth = in_ngn if user.riskProfile.primary_income_currency == schemas.Currency.NGN else in_usd
   
-
-  annual_income = in_ngn if user.riskProfile.primary_income_currency == schemas.Currency.NGN else in_usd * 1500
+  annual_income = user.riskProfile.monthly_income * 12 
   required_investment = annual_income / 0.07 if user.riskProfile.primary_income_currency == schemas.Currency.USD else annual_income / 0.20 # required asset value to meet income
   
   gap = (required_investment - net_worth) if required_investment <= net_worth else 0
@@ -90,7 +84,7 @@ async def getEmergencyRisk(
     "emergencyFundValue": emergency_fund_value.get("totalValueNgn") if target_currency == schemas.Currency.NGN else emergency_fund_value.get("totalValueUsd"),
     "targetEmergencyFund": target_emergency_fund,
     "targetCurrency": target_currency,
-    "ratio": ratio,
+    "ratio": 1 if ratio > 1 else ratio,
   }
 
 async def recommendEmergencyRisk(user = Depends(getUser)):
@@ -125,6 +119,8 @@ async def getLiquidRisk(db: db, user: Annotated[model.User, Depends(getUserRiskP
   investmentValue = total_ngn
   liquid_assets = liquidityNgn + (liquidityUsd * 1500)
   liquidityRatio = liquid_assets / investmentValue
+
+  liquidityRatio = 1 if liquidityRatio > 1 else liquidityRatio
 
   return {
     "investmentValue": investmentValue,
