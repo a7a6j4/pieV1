@@ -38,29 +38,30 @@ async def getFinancialIndependence(db: db, user: Annotated[model.User, Depends(g
   total_usd = 0
   total_ngn = 0
 
-  for portfolio in user.portfolios:
-    portfolio_value = await getPortfolioValue(db, await getPortfolioAssets(db, portfolio=portfolio))
-    total_usd += portfolio_value.get("totalValueUsd", 0.00)
-    total_ngn += portfolio_value.get("totalValueNgn", 0.00)
+  user_value = await getUserValue(db, user)
+  in_ngn = user_value.get("totalValueNgn")
+  in_usd = user_value.get("totalValueUsd")
 
-  net_worth = total_ngn
+  if user.riskProfile.primary_income_currency == schemas.Currency.NGN:
+    net_worth = in_ngn
+  elif user.riskProfile.primary_income_currency == schemas.Currency.USD:
+    net_worth = in_usd
+  else:
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid income currency")
   
 
-  annual_income = float(user.riskProfile.monthly_income) * 12
-  required_investment = float(annual_income) / 0.20 # required asset value to meet income
+  annual_income = in_ngn if user.riskProfile.primary_income_currency == schemas.Currency.NGN else in_usd * 1500
+  required_investment = annual_income / 0.07 if user.riskProfile.primary_income_currency == schemas.Currency.USD else annual_income / 0.20 # required asset value to meet income
   
   gap = (required_investment - net_worth) if required_investment <= net_worth else 0
   independence = (net_worth / required_investment)
-
   return {
-        "annualIncome": float(annual_income),
-        "ngnRequiredInvestment": required_investment,
-        "ngnNetWorth": float(net_worth),
-        "independenceGap": gap,
-        "independenceScore": independence,
-        "message": "You are on your way to financial independence!" if independence >= 1 else "You need to increase your investments to achieve financial independence."
+    "annualIncome": annual_income,
+    "requiredInvestment": required_investment,
+    "netWorth": net_worth,
+    "gap": gap,
+    "independence": independence,
   }
-
 async def recommendIndependence(db: db, user = Depends(getUser)):
   pass
 

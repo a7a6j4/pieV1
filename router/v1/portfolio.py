@@ -13,7 +13,6 @@ from pydantic import BaseModel
 from typing import Any, Optional, List, Union, Annotated
 from datetime import datetime, timedelta
 import model
-from router.v1.advisory import getHighestReturnIncomeProduct
 from router.v1.product import getPrice, getProduct
 from utils.payment_schedule import generate_schedule_dates
 from ..v1.user import getUser
