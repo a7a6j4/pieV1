@@ -54,7 +54,7 @@ async def getFinancialIndependence(db: db, user: Annotated[model.User, Depends(g
     "requiredInvestment": required_investment,
     "netWorth": net_worth,
     "gap": gap,
-    "independence": independence,
+    "independence": independence * 100,
   }
 async def recommendIndependence(db: db, user = Depends(getUser)):
   pass
@@ -84,7 +84,7 @@ async def getEmergencyRisk(
     "emergencyFundValue": emergency_fund_value.get("totalValueNgn") if target_currency == schemas.Currency.NGN else emergency_fund_value.get("totalValueUsd"),
     "targetEmergencyFund": target_emergency_fund,
     "targetCurrency": target_currency,
-    "ratio": min(1, ratio),
+    "ratio": min(1, ratio) * 100,
   }
 
 async def recommendEmergencyRisk(user = Depends(getUser)):
@@ -125,7 +125,7 @@ async def getLiquidRisk(db: db, user: Annotated[model.User, Depends(getUserRiskP
   return {
     "investmentValue": investmentValue,
     "liquidAssets": liquid_assets,
-    "ratio": liquidityRatio,
+    "ratio": liquidityRatio * 100,
     "message": "You have sufficent investments to mitigate liquidity risk!" if liquidityRatio >= 0.20 else "Invest in more liquid assets to mitigate liquidity risk."
   }
 
