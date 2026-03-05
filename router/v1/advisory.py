@@ -78,7 +78,7 @@ async def getEmergencyRisk(
   if not user.riskProfile:
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Risk profile not found")
 
-  emergency_portfolio = filter(lambda x: x.type == schemas.PortfolioType.EMERGENCY, user.portfolios)
+  emergency_portfolio = list(filter(lambda x: x.type == schemas.PortfolioType.EMERGENCY, user.portfolios))
 
   emergency_fund_value = await getPortfolioValue(db, await getPortfolioAssets(db, portfolio=emergency_portfolio[0]))
   target_currency = emergency_portfolio[0].get("target").get("currency")
